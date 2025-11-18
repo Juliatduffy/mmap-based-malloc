@@ -25,11 +25,10 @@
 /* rounds up to the nearest multiple of mem_pagesize() */
 #define PAGE_ALIGN(size) (((size) + (mem_pagesize()-1)) & ~(mem_pagesize()-1))
 
-void *curr_block_ptr = NULL;
-int curr_block_size = 0;
-void * head;
-
 #define HEADERSIZE 32 // yuck lol
+
+void *curr_block_ptr = NULL;
+int curr_block_size = HEADERSIZE;
 
 typedef struct block_header { 
   size_t size;
@@ -56,26 +55,21 @@ int mm_init(void)
  */
 void *mm_malloc(size_t size)
 {
+  size += HEADERSIZE;
   int newsize = ALIGN(size);
-   void * prev = NULL;
-  if(curr_block_ptr != NULL) {
-    prev = curr_block_ptr - HEADERSIZE;
-  }
+  void * prev = curr_block_ptr;
 
   // if we need more space call mem_map to get a new page
-  if (curr_block_size < newsize) {
+  if (curr_block_size + HEADERSIZE < newsize) {
     curr_block_size = PAGE_ALIGN(newsize);
     void * new_block = mem_map(curr_block_size); // NEW PAGE
     if (new_block == NULL) {
       return NULL;
     }
-    if (curr_block_ptr == NULL) {
-      head = new_block;
-    }
     curr_block_ptr = new_block;
     }
 
-  curr_block_ptr  += newsize + HEADERSIZE;
+  curr_block_ptr  += newsize;
   curr_block_size -= newsize; // don't understand this
   
   // make header for new block
@@ -83,6 +77,7 @@ void *mm_malloc(size_t size)
   curr_header->size = size;
   curr_header->allocated = 1;
   curr_header->prev = prev;
+  curr_header->next = NULL;
  
   // set "next" pointer for previous block
   if (prev != NULL) {
@@ -91,7 +86,7 @@ void *mm_malloc(size_t size)
   }
 
   // return pointer to new block (starting after header)
-  return curr_block_ptr;
+  return (void *) (curr_header + 1);// question: +1 gives headersize more bytes right? or 1 word?
 }
 
 /*
