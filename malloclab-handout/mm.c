@@ -38,8 +38,9 @@ typedef struct block_header {
 } block_header; 
 
 typedef struct node {
-  size_t value; // pointer to THIS memory
-  size_t next; 
+  size_t size; // size of this block
+  size_t data_ptr; // pointer to this block
+  size_t next; // pointer to next block
 } node; 
 
 // make prolog and epilog
@@ -47,7 +48,7 @@ typedef struct node {
 #define HEADERSIZE sizeof(block_header) // 16 bytes 
 #define NODESIZE sizeof(node)  // 16 bytes
 
-node * first_node = {NULL, NULL}; // stores head of free linked list, ok to have explicit free list
+node * first_node = {0, NULL, NULL}; // stores head of free linked list, ok to have explicit free list
 int current_avail_size = 0;
 
 /* 
@@ -58,9 +59,9 @@ int mm_init(void)
   // create free list
   // create empty free list 
   // extend the heap to create an initial free block
-  first_node-> value = mem_map(4 * __WORDSIZE); // not sure where this wordsize thing came from
+  first_node-> data_ptr = mem_map(4 * __WORDSIZE); // not sure where this wordsize thing came from
   first_node -> next = NULL;
-  int current_avail_size = 0;
+  int current_avail_size = 4096;
 
   return 0;
 }
@@ -71,18 +72,38 @@ int mm_init(void)
  */
 void *mm_malloc(size_t size)
 {
+  // Here we add the header to the size that we need to allocate (should be 16 bytes)
+  // and pad that size if necessary to be 16 byte aligned
   size += HEADERSIZE; 
   int newsize = ALIGN(size);
 
-  if (current_avail_size < newsize) {
-    current_avail_size = PAGE_ALIGN(newsize);
-    current_avail = mem_map(current_avail_size);
-    if (current_avail == NULL)
+  // Now traverse our free list to find the next open spot (first fit) that will work for
+  // our new data. 
+  node* curr = first_node;
+  while(curr != NULL && curr->size < newsize){
+      curr = curr->next;
+  }
+
+  // IDK if this will ever happen tbh 
+  if(curr == NULL) {
+    print("oopsie poopsie");
+    return;
+  }
+
+  // Now we check to see if there are NO available spaces in our free list that work (we got to the end
+  // of the list and didnt find anything big enough) and if so, we call extend method (haven't implemented yet)
+  // to get a new page of heap memory of size 4096 bytes. Make sure to update free list accordingly.
+  if (curr->size < newsize) {
+    node * tmp = curr;
+
+    size_t new_size = PAGE_ALIGN(newsize); // returns padded size of new block (should be 4096)
+    size_t new_data_ptr = mem_map(newsize); // returns pointer to our new free memory block
+    if (curr->data_ptr == NULL)
       return NULL;
   }
   
   // make header for new block
-  block_header * curr_header = (block_header *) curr_block_ptr;
+  block_header * curr_header = (block_header *) curr->data_ptr;
   curr_header->size = size;
   curr_header->allocated = 1;
  
@@ -97,8 +118,8 @@ void *mm_malloc(size_t size)
  */
 void mm_free(void *ptr)
 {
-  // block_header * header = (block_header *)ptr;
-  // header -> allocated = 0;
+  block_header * header = (block_header *)ptr;
+  header -> allocated = 0;
 }
 
 void extend(size_t s) {
