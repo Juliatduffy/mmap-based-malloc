@@ -32,43 +32,53 @@
 #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~(ALIGNMENT-1)) // rounds up to the nearest multiple of ALIGNMENT
 #define PAGE_ALIGN(size) (((size) + (mem_pagesize()-1)) & ~(mem_pagesize()-1)) // rounds up to the nearest multiple of mem_pagesize()
 
+/// BLOCK HEADER FOR ALLOCATED MEMORY
 typedef struct block_header { 
   size_t size;
   char allocated;
 } block_header; 
 
+/// FREE LIST NODE
 typedef struct node {
   size_t size; // size of this block
   size_t data_ptr; // pointer to this block
-  size_t next; // pointer to next block
+  size_t next; 
+  size_t prev;  
 } node; 
 
-// make prolog and epilog
+// TODO make prolog and epilogue for coalescing
+block_header prolog;
+block_header epilogue;
 
 #define HEADERSIZE sizeof(block_header) // 16 bytes 
 #define NODESIZE sizeof(node)  // 16 bytes
 
-node * first_node = {0, NULL, NULL}; // stores head of free linked list, ok to have explicit free list
-int current_avail_size = 0;
+node * first_node = {0, NULL, NULL, NULL}; // stores head of free linked list, ok to have explicit free list
 
 /* 
  * mm_init - initialize the malloc package. NOt 100% sure what to do here
+ * 
+ * This method:
+ * 1. creates the free list and allocates a free block using mem_map (call extend method)
+ * ...
+ * 
  */
 int mm_init(void)
 {
-  // create free list
-  // create empty free list 
-  // extend the heap to create an initial free block
-  first_node-> data_ptr = mem_map(4 * __WORDSIZE); // not sure where this wordsize thing came from
-  first_node -> next = NULL;
-  int current_avail_size = 4096;
-
   return 0;
 }
 
 /* 
- * mm_malloc - Allocate a block by using bytes from new_block,
- *     grabbing a new page if necessary. need to split big block
+ *  mm_malloc - Allocate a block by using bytes from new_block,
+ *  grabbing a new page if necessary. need to split big block
+ *  
+ *  This method
+ *  1. aligns/pads the given size 
+ *  2. traverses the free list until it finds an empty spot that is big enough or gets to the end of the list
+ *  3. If we are at the end of the list, then  we call extend method (haven't implemented yet)
+ *     to get a new page of heap memory of size 4096 bytes. Make sure to update free list accordingly.
+ *  4. Then we create a new block header for the memory we are allocating
+ *  5. Then return the pointer to the new memory we just allocated.
  */
 void *mm_malloc(size_t size)
 {
@@ -80,54 +90,63 @@ void *mm_malloc(size_t size)
   // Now traverse our free list to find the next open spot (first fit) that will work for
   // our new data. 
   node* curr = first_node;
-  while(curr != NULL && curr->size < newsize){
+  while(curr->next != NULL && curr->size < newsize){
       curr = curr->next;
   }
 
-  // IDK if this will ever happen tbh 
-  if(curr == NULL) {
-    print("oopsie poopsie");
-    return;
-  }
+if (curr->size < newsize) {
+    // make new block of memory, make new pointer
+    size_t new_size = PAGE_ALIGN(newsize); 
+    size_t new_data_ptr = mem_map(newsize); 
+    node * new_node = mem_map(PAGE_ALIGN(NODESIZE)); 
 
-  // Now we check to see if there are NO available spaces in our free list that work (we got to the end
-  // of the list and didnt find anything big enough) and if so, we call extend method (haven't implemented yet)
-  // to get a new page of heap memory of size 4096 bytes. Make sure to update free list accordingly.
-  if (curr->size < newsize) {
-    node * tmp = curr;
-
-    size_t new_size = PAGE_ALIGN(newsize); // returns padded size of new block (should be 4096)
-    size_t new_data_ptr = mem_map(newsize); // returns pointer to our new free memory block
-    if (curr->data_ptr == NULL)
+    // something went wrong with mem_map
+    if (new_node == NULL) {
+      print("ruh roh");
       return NULL;
+    }
+
+    // update free list now
+    curr-> next = new_node;
+    new_node-> size = new_size;
+    new_node-> next = NULL;
+
+    // set curr to be the new free node
+    curr = new_node;
+    
   }
-  
   // make header for new block
-  block_header * curr_header = (block_header *) curr->data_ptr;
+  block_header* curr_header = (block_header *) curr->data_ptr; // store block header at the new allocated memory
   curr_header->size = size;
   curr_header->allocated = 1;
  
-  // update free list
-
-  // return pointer to new block (starting after header)
-  return (void *) (curr_header + 1);// question: +1 gives headersize more bytes right? or 1 word?
+  // return pointer to new block (starting after header bc user would overwrite header otherwise)
+  return curr->data_ptr + HEADERSIZE; // FIXME: is + HEADERSIZE ok here? there might be a macro for this I could use
 }
 
 /*
- * mm_free
+ * free block at ptr. No need to check if this is a block that we have access to! Just change the 
+ * block header to be allocated. TODO: add coalescing to this.
  */
 void mm_free(void *ptr)
 {
   block_header * header = (block_header *)ptr;
   header -> allocated = 0;
+  // TODO: implement this
 }
 
+/*
+* Extend the heap size
+*/
 void extend(size_t s) {
-// if we need more space call mem_map to get a new page
-  free_list_tail = PAGE_ALIGN(s);
-  void * new_block = mem_map(free_list_tail); // NEW PAGE
-  if (new_block == NULL) {
-    return NULL;
-  }
-  free_list_tail = new_block;
-  }
+  // TODO: implement this
+}
+
+
+/*
+NOTES:
+- should call mem_map as little as possible (dont be calling it when we make a new list node)
+- should add prolog and epilog block for coalescing
+- without splitting, right now every block of memory is it's own heap page/area (bad)
+- first fit > best fit for this assignment according to TA
+*/
