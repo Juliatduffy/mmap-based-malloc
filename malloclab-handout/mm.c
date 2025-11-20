@@ -41,39 +41,37 @@ typedef struct block_header {
 /// FREE LIST NODE
 typedef struct node {
   size_t size; // size of this block
-  void * data_ptr; // memory that this node represents
   void * next; 
   void * prev;  
 } node; 
 
 // TODO make prolog and epilogue for coalescing
-block_header prolog;
-block_header epilogue;
+block_header * prolog;
+block_header * epilogue;
 
 #define HEADERSIZE sizeof(block_header) // 16 bytes 
 #define NODESIZE sizeof(node)  // 16 bytes
 
-node first_node = {0, NULL, NULL, NULL}; // stores head of free linked list, ok to have explicit free list
+node * first_node = NULL; // stores head of free linked list, ok to have explicit free list
 
 /*
 * helper for mm_init
 */
 void initialize_free_list(void){
     size_t new_size = PAGE_ALIGN(4 * __WORDSIZE); 
-    void * new_data_ptr = mem_map(new_size); 
+    first_node = mem_map(new_size); 
     printf("%s, %ld, %s\n", "initialize_free_list: initialized ", new_size, "bytes of memory");
 
     // something went wrong with mem_map
-    if (new_data_ptr == NULL) {
+    if (first_node == NULL) {
       printf("initialize_free_list: mem_map error\n");
       return;
     }
 
     // update free list now
-    first_node.data_ptr = new_data_ptr;
-    first_node.size = new_size - NODESIZE;
-    first_node.next = NULL;
-    first_node.prev = NULL;
+    first_node->size = new_size - NODESIZE;
+    first_node->next = NULL;
+    first_node->prev = NULL;
   
     printf("initialize_free_list: done\n");
 }
@@ -89,10 +87,10 @@ void initialize_free_list(void){
 int mm_init(void)
 {
   // make new block of memory, make new pointer
-    initialize_free_list();
-    printf("%s, %p\n", "mm_init: New memory pointer: ", first_node.data_ptr);
-    printf("mm_init: done");
-    return 0;
+  initialize_free_list();
+  printf("%s, %p\n", "mm_init: New memory pointer: ", first_node);
+  printf("mm_init: done");
+  return 0;
 }
 
 /* 
@@ -111,15 +109,16 @@ void *mm_malloc(size_t size)
 {
 //   // Here we add the header to the size that we need to allocate (should be 16 bytes)
 //   // and pad that size if necessary to be 16 byte aligned
-//   printf("malloc 1\n");
-//   size += HEADERSIZE; 
+//   printf("malloc: hello!\n");
+//   size += HEADERSIZE + NODESIZE; 
 //   int newsize = ALIGN(size);
 
 //   // Now traverse our free list to find the next open spot (first fit) that will work for
 //   // our new data. 
-//   node curr = first_node;
-//   printf("malloc 2\n");
+//   node * curr = *first_node;
 
+//   if (first_node.data_ptr == NULL)   printf("malloc: first_node points to no memory\n");
+  
 //   while(curr.next != NULL && curr->size < newsize){
 //       printf("malloc 2.5\n");
 //       curr = curr->next;
