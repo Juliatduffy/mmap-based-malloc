@@ -1,12 +1,8 @@
 /*
- * mm-naive.c - The least memory-efficient malloc package.
- * 
- * In this naive approach, a block is allocated by allocating a
- * new page as needed.  A block is pure payload. There are no headers or
- * footers.  Blocks are never coalesced or reused.
- *
- * NOTE TO STUDENTS: Replace this header comment with your own header
- * comment that gives a high level description of your solution.
+ * mm-naive.c
+ * author: Julia DUffy and CS4400 at the University of Utah
+ * last edited: 11-20-2025
+ * current implementation: explicit free list with no coalescing or splitting (not working)
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,18 +12,6 @@
 #include "mm.h"
 #include "memlib.h"
 
-// #define OVERHEAD (sizeof(block_header)+sizeof(block_footer)) // calculate overhead
-// #define GET(p) (*(size_t *)(p))// get value at pointer 
-// #define GET_SIZE(p) (GET(p) & ~0xF) // Given a header pointer get the size 
-//  #define HDRP(bp) ((char *)(bp) - sizeof(block_header)) // given bp, get the header
-// #define FTRP(bp) ((char *)(bp)+GET_SIZE(HDRP(bp))-OVERHEAD) // given bp, get the footer
-// #define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE(HDRP(bp))) // get the next payload pointer
-// #define PREV_BLKP(bp) ((char *)(bp)-GET_SIZE((char *)(bp)-OVERHEAD)) // get the previous payload pointer
-
-// // ******These macros assume you are using a size_t for headers and footers ******
-// #define PUT(p, val) (*(size_t *)(p) = (val)) // set value at pointer 
-// #define PACK(size, alloc) ((size) | (alloc)) // Combine a size and alloc bit
-// #define GET_ALLOC(p) (GET(p) & 0x1) // Given a header pointer get the allocation 
 #define ALIGNMENT 16 // always use 16-byte alignment
 #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~(ALIGNMENT-1)) // rounds up to the nearest multiple of ALIGNMENT
 #define PAGE_ALIGN(size) (((size) + (mem_pagesize()-1)) & ~(mem_pagesize()-1)) // rounds up to the nearest multiple of mem_pagesize()
@@ -36,8 +20,8 @@
 typedef struct block_header {
     size_t size;                  
     int allocated;                    
-    block_header *next; // next free block
-    block_header *prev;    
+    struct block_header *next; // next free block
+    struct block_header *prev;    
 } block_header;
 
 // TODO make prolog and epilogue for coalescing
