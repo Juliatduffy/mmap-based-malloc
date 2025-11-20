@@ -107,59 +107,56 @@ int mm_init(void)
  */
 void *mm_malloc(size_t size)
 {
-//   // Here we add the header to the size that we need to allocate (should be 16 bytes)
-//   // and pad that size if necessary to be 16 byte aligned
-//   printf("malloc: hello!\n");
-//   size += HEADERSIZE + NODESIZE; 
-//   int newsize = ALIGN(size);
+  // Here we add the header to the size that we need to allocate (should be 16 bytes)
+  // and pad that size if necessary to be 16 byte aligned
+  printf("malloc: hello!\n");
+  size += HEADERSIZE + NODESIZE; 
+  int newsize = ALIGN(size);
 
-//   // Now traverse our free list to find the next open spot (first fit) that will work for
-//   // our new data. 
-//   node * curr = *first_node;
+  // Now traverse our free list to find the next open spot (first fit) that will work for
+  // our new data. 
+  node * curr = first_node;
 
-//   if (first_node.data_ptr == NULL)   printf("malloc: first_node points to no memory\n");
+  if (curr == NULL)  {
+    printf("malloc: first_node points to no memory\n");
+    return NULL;
+  }
   
-//   while(curr.next != NULL && curr->size < newsize){
-//       printf("malloc 2.5\n");
-//       curr = curr->next;
-//   }
-//   printf("malloc 3\n");
+  while(curr->next != NULL && curr->size < newsize){
+      printf("malloc 2.5\n");
+      curr = curr->next;
+  }
+  printf("malloc 3\n");
 
-// if (curr->size < newsize) {
-//     printf("malloc extend 1\n");
-//     // make new block of memory, make new pointer
-//     size_t new_size = PAGE_ALIGN(newsize); 
-//     void * new_data_ptr = mem_map(newsize); 
-//     node * new_node = mem_map(PAGE_ALIGN(NODESIZE)); 
-//     printf("malloc extend 2\n");
+if (curr->size < newsize) {
+    printf("malloc extend 1\n");
+    // make new block of memory, make new pointer
+    size_t new_size = PAGE_ALIGN(newsize); 
+    node * new_node = mem_map(newsize); 
+    printf("malloc extend 2\n");
 
-//     // something went wrong with mem_map
-//     if (new_node == NULL) {
-//       printf("ruh roh - mm_malloc");
-//       return NULL;
-//     }
-//     printf("malloc extend 3\n");
+    // something went wrong with mem_map
+    if (new_node == NULL) {
+      printf("ruh roh - mm_malloc");
+      return NULL;
+    }
+    printf("malloc extend 3\n");
+    // update free list now
+    curr->next = new_node;
+    new_node-> prev = curr;
+    new_node-> size = new_size;
 
-//     // update free list now
-//     curr-> next = new_node;
-//     new_node-> data_ptr = new_data_ptr;
-//     new_node-> size = new_size;
-//     new_node-> next = NULL;
-//     printf("malloc extend 4\n");
+    printf("malloc extend 4\n");
+  }
+  printf("malloc 4\n");
+  // make header for new block
+  block_header* curr_header = (block_header *) (curr + 1); // store block header at the new allocated memory after node
+  curr_header->size = newsize - NODESIZE - HEADERSIZE;
+  curr_header->allocated = 1;
+  printf("malloc 5\n");
 
-//     // set curr to be the new free node
-//     curr = new_node;
-    
-//   }
-//   printf("malloc 4\n");
-//   // make header for new block
-//   block_header* curr_header = (block_header *) curr->data_ptr; // store block header at the new allocated memory
-//   curr_header->size = size;
-//   curr_header->allocated = 1;
-//   printf("malloc 5\n");
-
-//   // return pointer to new block (starting after header bc user would overwrite header otherwise)
-//   return curr->data_ptr + HEADERSIZE; // FIXME: is + HEADERSIZE ok here? there might be a macro for this I could use
+  // return pointer to new block (starting after header bc user would overwrite header otherwise)
+  return curr_header + 1; // FIXME: is + HEADERSIZE ok here? there might be a macro for this I could use
 return 0;
 }
 
