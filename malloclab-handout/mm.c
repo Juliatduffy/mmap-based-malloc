@@ -16,18 +16,18 @@
 #include "mm.h"
 #include "memlib.h"
 
-#define OVERHEAD (sizeof(block_header)+sizeof(block_footer)) // calculate overhead
-#define HDRP(bp) ((char *)(bp) - sizeof(block_header)) // given bp, get the header or footer pointer
-#define FTRP(bp) ((char *)(bp)+GET_SIZE(HDRP(bp))-OVERHEAD) // given bp, get the footer pointer
-#define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE(HDRP(bp))) // get the next payload pointer
-#define PREV_BLKP(bp) ((char *)(bp)-GET_SIZE((char *)(bp)-OVERHEAD)) // get the previous payload pointer
+// #define OVERHEAD (sizeof(block_header)+sizeof(block_footer)) // calculate overhead
+// #define HDRP(bp) ((char *)(bp) - sizeof(block_header)) // given bp, get the header or footer pointer
+// #define FTRP(bp) ((char *)(bp)+GET_SIZE(HDRP(bp))-OVERHEAD) // given bp, get the footer pointer
+// #define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE(HDRP(bp))) // get the next payload pointer
+// #define PREV_BLKP(bp) ((char *)(bp)-GET_SIZE((char *)(bp)-OVERHEAD)) // get the previous payload pointer
 
-// ******These macros assume you are using a size_t for headers and footers ******
-#define GET(p) (*(size_t *)(p))// get value at pointer 
-#define PUT(p, val) (*(size_t *)(p) = (val)) // set value at pointer 
-#define PACK(size, alloc) ((size) | (alloc)) // Combine a size and alloc bit
-#define GET_ALLOC(p) (GET(p) & 0x1) // Given a header pointer get the allocation 
-#define GET_SIZE(p) (GET(p) & ~0xF) // Given a header pointer get the size 
+// // ******These macros assume you are using a size_t for headers and footers ******
+// #define GET(p) (*(size_t *)(p))// get value at pointer 
+// #define PUT(p, val) (*(size_t *)(p) = (val)) // set value at pointer 
+// #define PACK(size, alloc) ((size) | (alloc)) // Combine a size and alloc bit
+// #define GET_ALLOC(p) (GET(p) & 0x1) // Given a header pointer get the allocation 
+// #define GET_SIZE(p) (GET(p) & ~0xF) // Given a header pointer get the size 
 #define ALIGNMENT 16 // always use 16-byte alignment
 #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~(ALIGNMENT-1)) // rounds up to the nearest multiple of ALIGNMENT
 #define PAGE_ALIGN(size) (((size) + (mem_pagesize()-1)) & ~(mem_pagesize()-1)) // rounds up to the nearest multiple of mem_pagesize()
@@ -41,9 +41,9 @@ typedef struct block_header {
 /// FREE LIST NODE
 typedef struct node {
   size_t size; // size of this block
-  size_t data_ptr; // pointer to this block
-  size_t next; 
-  size_t prev;  
+  void * data_ptr; // memory that this node represents
+  void * next; 
+  void * prev;  
 } node; 
 
 // TODO make prolog and epilogue for coalescing
@@ -53,19 +53,46 @@ block_header epilogue;
 #define HEADERSIZE sizeof(block_header) // 16 bytes 
 #define NODESIZE sizeof(node)  // 16 bytes
 
-node * first_node = {0, NULL, NULL, NULL}; // stores head of free linked list, ok to have explicit free list
+node first_node = {0, NULL, NULL, NULL}; // stores head of free linked list, ok to have explicit free list
+
+/*
+* helper for mm_init
+*/
+void initialize_free_list(void){
+    size_t new_size = PAGE_ALIGN(4 * __WORDSIZE); 
+    void * new_data_ptr = mem_map(new_size); 
+    printf("%s, %ld, %s\n", "initialize_free_list: initialized ", new_size, "bytes of memory");
+
+    // something went wrong with mem_map
+    if (new_data_ptr == NULL) {
+      printf("initialize_free_list: mem_map error\n");
+      return;
+    }
+
+    // update free list now
+    first_node.data_ptr = new_data_ptr;
+    first_node.size = new_size - NODESIZE;
+    first_node.next = NULL;
+    first_node.prev = NULL;
+  
+    printf("initialize_free_list: done\n");
+}
 
 /* 
  * mm_init - initialize the malloc package. NOt 100% sure what to do here
  * 
  * This method:
  * 1. creates the free list and allocates a free block using mem_map (call extend method)
- * ...
+ * 2. returns a pointer to the new memory
  * 
  */
 int mm_init(void)
 {
-  return 0;
+  // make new block of memory, make new pointer
+    initialize_free_list();
+    printf("%s, %p\n", "mm_init: New memory pointer: ", first_node.data_ptr);
+    printf("mm_init: done");
+    return 0;
 }
 
 /* 
@@ -82,46 +109,59 @@ int mm_init(void)
  */
 void *mm_malloc(size_t size)
 {
-  // Here we add the header to the size that we need to allocate (should be 16 bytes)
-  // and pad that size if necessary to be 16 byte aligned
-  size += HEADERSIZE; 
-  int newsize = ALIGN(size);
+//   // Here we add the header to the size that we need to allocate (should be 16 bytes)
+//   // and pad that size if necessary to be 16 byte aligned
+//   printf("malloc 1\n");
+//   size += HEADERSIZE; 
+//   int newsize = ALIGN(size);
 
-  // Now traverse our free list to find the next open spot (first fit) that will work for
-  // our new data. 
-  node* curr = first_node;
-  while(curr->next != NULL && curr->size < newsize){
-      curr = curr->next;
-  }
+//   // Now traverse our free list to find the next open spot (first fit) that will work for
+//   // our new data. 
+//   node curr = first_node;
+//   printf("malloc 2\n");
 
-if (curr->size < newsize) {
-    // make new block of memory, make new pointer
-    size_t new_size = PAGE_ALIGN(newsize); 
-    size_t new_data_ptr = mem_map(newsize); 
-    node * new_node = mem_map(PAGE_ALIGN(NODESIZE)); 
+//   while(curr.next != NULL && curr->size < newsize){
+//       printf("malloc 2.5\n");
+//       curr = curr->next;
+//   }
+//   printf("malloc 3\n");
 
-    // something went wrong with mem_map
-    if (new_node == NULL) {
-      print("ruh roh");
-      return NULL;
-    }
+// if (curr->size < newsize) {
+//     printf("malloc extend 1\n");
+//     // make new block of memory, make new pointer
+//     size_t new_size = PAGE_ALIGN(newsize); 
+//     void * new_data_ptr = mem_map(newsize); 
+//     node * new_node = mem_map(PAGE_ALIGN(NODESIZE)); 
+//     printf("malloc extend 2\n");
 
-    // update free list now
-    curr-> next = new_node;
-    new_node-> size = new_size;
-    new_node-> next = NULL;
+//     // something went wrong with mem_map
+//     if (new_node == NULL) {
+//       printf("ruh roh - mm_malloc");
+//       return NULL;
+//     }
+//     printf("malloc extend 3\n");
 
-    // set curr to be the new free node
-    curr = new_node;
+//     // update free list now
+//     curr-> next = new_node;
+//     new_node-> data_ptr = new_data_ptr;
+//     new_node-> size = new_size;
+//     new_node-> next = NULL;
+//     printf("malloc extend 4\n");
+
+//     // set curr to be the new free node
+//     curr = new_node;
     
-  }
-  // make header for new block
-  block_header* curr_header = (block_header *) curr->data_ptr; // store block header at the new allocated memory
-  curr_header->size = size;
-  curr_header->allocated = 1;
- 
-  // return pointer to new block (starting after header bc user would overwrite header otherwise)
-  return curr->data_ptr + HEADERSIZE; // FIXME: is + HEADERSIZE ok here? there might be a macro for this I could use
+//   }
+//   printf("malloc 4\n");
+//   // make header for new block
+//   block_header* curr_header = (block_header *) curr->data_ptr; // store block header at the new allocated memory
+//   curr_header->size = size;
+//   curr_header->allocated = 1;
+//   printf("malloc 5\n");
+
+//   // return pointer to new block (starting after header bc user would overwrite header otherwise)
+//   return curr->data_ptr + HEADERSIZE; // FIXME: is + HEADERSIZE ok here? there might be a macro for this I could use
+return 0;
 }
 
 /*
