@@ -17,11 +17,11 @@
 #include "memlib.h"
 
 // #define OVERHEAD (sizeof(block_header)+sizeof(block_footer)) // calculate overhead
-#define GET(p) (*(size_t *)(p))// get value at pointer 
-#define GET_SIZE(p) (GET(p) & ~0xF) // Given a header pointer get the size 
- #define HDRP(bp) ((char *)(bp) - sizeof(block_header)) // given bp, get the header
+// #define GET(p) (*(size_t *)(p))// get value at pointer 
+// #define GET_SIZE(p) (GET(p) & ~0xF) // Given a header pointer get the size 
+//  #define HDRP(bp) ((char *)(bp) - sizeof(block_header)) // given bp, get the header
 // #define FTRP(bp) ((char *)(bp)+GET_SIZE(HDRP(bp))-OVERHEAD) // given bp, get the footer
- #define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE(HDRP(bp))) // get the next payload pointer
+// #define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE(HDRP(bp))) // get the next payload pointer
 // #define PREV_BLKP(bp) ((char *)(bp)-GET_SIZE((char *)(bp)-OVERHEAD)) // get the previous payload pointer
 
 // // ******These macros assume you are using a size_t for headers and footers ******
@@ -43,16 +43,17 @@ typedef struct node {
   size_t size; // size of this block
   void * next; 
   void * prev;  
+  int filler;
 } node; 
 
 // TODO make prolog and epilogue for coalescing
 block_header * prolog;
 block_header * epilogue;
 
-#define HEADERSIZE sizeof(block_header) // 16 bytes 
-#define NODESIZE sizeof(node)  // 16 bytes
+#define HEADERSIZE sizeof(block_header)
+#define NODESIZE sizeof(node) 
 
-node * first_node = NULL; // stores head of free linked list, ok to have explicit free list
+node * first_node = NULL; // head of free list
 
 /*
 * helper for mm_init
@@ -60,35 +61,26 @@ node * first_node = NULL; // stores head of free linked list, ok to have explici
 void initialize_free_list(void){
     size_t new_size = PAGE_ALIGN(4 * __WORDSIZE); 
     first_node = mem_map(new_size); 
-    printf("%s, %ld, %s\n", "initialize_free_list: initialized ", new_size, "bytes of memory");
-
-    // something went wrong with mem_map
     if (first_node == NULL) {
       printf("initialize_free_list: mem_map error\n");
       return;
     }
-
     // update free list now
     first_node->size = new_size - NODESIZE;
     first_node->next = NULL;
     first_node->prev = NULL;
-  
-    //printf("initialize_free_list: done\n");
-}
+  }
 
 /* 
  * mm_init - initialize the malloc package. NOt 100% sure what to do here
  * 
  * This method:
  * 1. creates the free list and allocates a free block using mem_map (call extend method)
- * 2. returns a pointer to the new memory
- * 
+ * 2. returns -1 on an error
  */
 int mm_init(void)
 {
-  // make new block of memory, make new pointer
   initialize_free_list();
-  //printf("%s %p\n", "mm_init: New memory pointer: ", first_node);
   return 0;
 }
 
@@ -106,56 +98,61 @@ int mm_init(void)
  */
 void *mm_malloc(size_t size)
 {
-  // Here we add the header to the size that we need to allocate (should be 16 bytes)
-  // and pad that size if necessary to be 16 byte aligned
-  printf("malloc: hello!\n");
-  size += HEADERSIZE + NODESIZE; 
-  int newsize = ALIGN(size);
+  printf("malloc(%ld)\n", size);
+  printf("malloc: first-node points to: %p\n", first_node);
+  printf("malloc: first-node->next points to: %p\n", first_node->next);
+  size += HEADERSIZE; 
+  size_t new_size = ALIGN(size);
+  printf("malloc: padded size with header: %ld!\n", new_size);
 
-  // Now traverse our free list to find the next open spot (first fit) that will work for
-  // our new data. 
   node * curr = first_node;
 
   if (curr == NULL)  {
     printf("malloc: first_node points to no memory\n");
     return NULL;
   }
-  
-  while(curr->next != NULL && curr->size < newsize){
-      printf("malloc 2.5\n"); // print begining and end of this method what all values are to see if they change unexpectedly
+
+  // Now traverse our free list to find the next open spot (first fit)
+  node * prev = curr-> prev;
+  while(curr && (curr->size < new_size)){
+      printf("malloc: traversing this ho\n"); // print begining and end of this method what all values are to see if they change unexpectedly
+      prev = curr;
       curr = curr->next;
   }
-  printf("malloc 3\n");
 
-if (curr->size < newsize) {
-    printf("malloc extend 1\n");
+  if (curr == NULL) {
+    printf("malloc: extend 1\n");
     // make new block of memory, make new pointer
-    size_t new_size = PAGE_ALIGN(newsize); 
-    node * new_node = mem_map(newsize); 
-    printf("malloc extend 2\n");
+    size_t aligned_new_size = PAGE_ALIGN(new_size); 
+    node * new_node = mem_map(aligned_new_size); 
+    printf("malloc: extend 2\n");
 
     // something went wrong with mem_map
     if (new_node == NULL) {
       printf("ruh roh - mm_malloc");
       return NULL;
     }
-    printf("malloc extend 3\n");
+    printf("malloc: extend 3\n");
     // update free list now
-    curr->next = new_node;
-    new_node-> prev = curr;
-    new_node-> size = new_size;
+    curr = new_node;
+    prev-> next = curr;
+    curr-> prev = prev;
+    curr-> next = NULL;
+    curr-> size = new_size;
 
-    printf("malloc extend 4\n");
+    printf("malloc: extend 4\n");
   }
-  printf("malloc 4\n");
+
+  printf("malloc: got new block, time to add block header\n");
+  printf("malloc: first-node now points to: %p\n", first_node);
   // make header for new block
-  block_header* curr_header = (block_header *) (curr + 1); // store block header at the new allocated memory after node
-  curr_header->size = newsize - NODESIZE - HEADERSIZE;
+  block_header* curr_header = (block_header *) (curr); // store block header at the new allocated memory after node
+  curr_header->size = new_size  - HEADERSIZE;
   curr_header->allocated = 1;
-  printf("malloc 5\n");
+  printf("malloc: first-node + block header now points to: %p\n", curr_header + 1);
 
   // return pointer to new block (starting after header bc user would overwrite header otherwise)
-  return NEXT_BLKP(curr_header); // FIXME: is + HEADERSIZE ok here? there might be a macro for this I could use
+  return (void *) (curr_header + 1); // FIXME: is + HEADERSIZE ok here? there might be a macro for this I could use
 return 0;
 }
 
