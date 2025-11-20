@@ -33,27 +33,20 @@
 #define PAGE_ALIGN(size) (((size) + (mem_pagesize()-1)) & ~(mem_pagesize()-1)) // rounds up to the nearest multiple of mem_pagesize()
 
 /// BLOCK HEADER FOR ALLOCATED MEMORY
-typedef struct block_header { 
-  size_t size;
-  char allocated;
-} block_header; 
-
-/// FREE LIST NODE
-typedef struct node {
-  size_t size; // size of this block
-  void * next; 
-  void * prev;  
-  int filler;
-} node; 
+typedef struct block_header {
+    size_t size;                  
+    int allocated;                    
+    block_header *next; // next free block
+    block_header *prev;    
+} block_header;
 
 // TODO make prolog and epilogue for coalescing
 block_header * prolog;
 block_header * epilogue;
 
 #define HEADERSIZE sizeof(block_header)
-#define NODESIZE sizeof(node) 
 
-node * first_node = NULL; // head of free list
+block_header * first_node = NULL; // head of free list
 
 /*
 * helper for mm_init
@@ -66,8 +59,9 @@ void initialize_free_list(void){
       return;
     }
     // update free list now
-    first_node->size = new_size - NODESIZE;
+    first_node->size = new_size - HEADERSIZE;
     first_node->next = NULL;
+    first_node-> allocated = 0;
     first_node->prev = NULL;
   }
 
@@ -76,11 +70,13 @@ void initialize_free_list(void){
  * 
  * This method:
  * 1. creates the free list and allocates a free block using mem_map (call extend method)
- * 2. returns -1 on an error
+ * 2. returns -1 on an error, 0 on success
  */
 int mm_init(void)
 {
   initialize_free_list();
+  if (!first_node)
+    return -1;
   return 0;
 }
 
@@ -98,14 +94,12 @@ int mm_init(void)
  */
 void *mm_malloc(size_t size)
 {
-  printf("malloc(%ld)\n", size);
-  printf("malloc: first-node points to: %p\n", first_node);
-  printf("malloc: first-node->next points to: %p\n", first_node->next);
   size += HEADERSIZE; 
   size_t new_size = ALIGN(size);
-  printf("malloc: padded size with header: %ld!\n", new_size);
+  printf("malloc: size: %ld\n", size);
+  printf("malloc: padded size with header: %ld\n", new_size);
 
-  node * curr = first_node;
+  block_header * curr = first_node;
 
   if (curr == NULL)  {
     printf("malloc: first_node points to no memory\n");
@@ -113,47 +107,37 @@ void *mm_malloc(size_t size)
   }
 
   // Now traverse our free list to find the next open spot (first fit)
-  node * prev = curr-> prev;
+  block_header * prev = curr->prev;
   while(curr && (curr->size < new_size)){
-      printf("malloc: traversing this ho\n"); // print begining and end of this method what all values are to see if they change unexpectedly
+      printf("malloc: traversing this ho\n"); 
       prev = curr;
       curr = curr->next;
   }
 
   if (curr == NULL) {
-    printf("malloc: extend 1\n");
-    // make new block of memory, make new pointer
+    // get new page of memory
     size_t aligned_new_size = PAGE_ALIGN(new_size); 
-    node * new_node = mem_map(aligned_new_size); 
-    printf("malloc: extend 2\n");
+    block_header * new_node = mem_map(aligned_new_size); 
+    printf("malloc:'extend' allocated %ld new bytes at address: %p\n", aligned_new_size, new_node);
 
-    // something went wrong with mem_map
     if (new_node == NULL) {
       printf("ruh roh - mm_malloc");
       return NULL;
     }
-    printf("malloc: extend 3\n");
-    // update free list now
+    // update free list
     curr = new_node;
-    prev-> next = curr;
-    curr-> prev = prev;
-    curr-> next = NULL;
-    curr-> size = new_size;
-
-    printf("malloc: extend 4\n");
   }
 
-  printf("malloc: got new block, time to add block header\n");
-  printf("malloc: first-node now points to: %p\n", first_node);
+  printf("malloc: adding block header for newly allocated memory at: %p\n", first_node);
   // make header for new block
-  block_header* curr_header = (block_header *) (curr); // store block header at the new allocated memory after node
-  curr_header->size = new_size  - HEADERSIZE;
+  block_header* curr_header = (block_header *) (curr);
+  curr_header->size = new_size - HEADERSIZE;
   curr_header->allocated = 1;
-  printf("malloc: first-node + block header now points to: %p\n", curr_header + 1);
+  curr_header-> prev = prev;
+  if(prev) prev->next = curr_header-> next;
 
-  // return pointer to new block (starting after header bc user would overwrite header otherwise)
-  return (void *) (curr_header + 1); // FIXME: is + HEADERSIZE ok here? there might be a macro for this I could use
-return 0;
+  printf("malloc: memory allocated at payload address: %p\n", curr_header + 1);
+  return (void *) (curr_header + 1);
 }
 
 /*
@@ -164,7 +148,7 @@ void mm_free(void *ptr)
 {
   block_header * header = (block_header *)ptr;
   header -> allocated = 0;
-  // TODO: implement this
+  if(header-> prev) header->prev->next = header->next;
 }
 
 /*
