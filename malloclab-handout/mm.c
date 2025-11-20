@@ -17,17 +17,17 @@
 #include "memlib.h"
 
 // #define OVERHEAD (sizeof(block_header)+sizeof(block_footer)) // calculate overhead
-// #define HDRP(bp) ((char *)(bp) - sizeof(block_header)) // given bp, get the header or footer pointer
-// #define FTRP(bp) ((char *)(bp)+GET_SIZE(HDRP(bp))-OVERHEAD) // given bp, get the footer pointer
-// #define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE(HDRP(bp))) // get the next payload pointer
+#define GET(p) (*(size_t *)(p))// get value at pointer 
+#define GET_SIZE(p) (GET(p) & ~0xF) // Given a header pointer get the size 
+ #define HDRP(bp) ((char *)(bp) - sizeof(block_header)) // given bp, get the header
+// #define FTRP(bp) ((char *)(bp)+GET_SIZE(HDRP(bp))-OVERHEAD) // given bp, get the footer
+ #define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE(HDRP(bp))) // get the next payload pointer
 // #define PREV_BLKP(bp) ((char *)(bp)-GET_SIZE((char *)(bp)-OVERHEAD)) // get the previous payload pointer
 
 // // ******These macros assume you are using a size_t for headers and footers ******
-// #define GET(p) (*(size_t *)(p))// get value at pointer 
 // #define PUT(p, val) (*(size_t *)(p) = (val)) // set value at pointer 
 // #define PACK(size, alloc) ((size) | (alloc)) // Combine a size and alloc bit
 // #define GET_ALLOC(p) (GET(p) & 0x1) // Given a header pointer get the allocation 
-// #define GET_SIZE(p) (GET(p) & ~0xF) // Given a header pointer get the size 
 #define ALIGNMENT 16 // always use 16-byte alignment
 #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~(ALIGNMENT-1)) // rounds up to the nearest multiple of ALIGNMENT
 #define PAGE_ALIGN(size) (((size) + (mem_pagesize()-1)) & ~(mem_pagesize()-1)) // rounds up to the nearest multiple of mem_pagesize()
@@ -73,7 +73,7 @@ void initialize_free_list(void){
     first_node->next = NULL;
     first_node->prev = NULL;
   
-    printf("initialize_free_list: done\n");
+    //printf("initialize_free_list: done\n");
 }
 
 /* 
@@ -88,8 +88,7 @@ int mm_init(void)
 {
   // make new block of memory, make new pointer
   initialize_free_list();
-  printf("%s, %p\n", "mm_init: New memory pointer: ", first_node);
-  printf("mm_init: done");
+  //printf("%s %p\n", "mm_init: New memory pointer: ", first_node);
   return 0;
 }
 
@@ -123,7 +122,7 @@ void *mm_malloc(size_t size)
   }
   
   while(curr->next != NULL && curr->size < newsize){
-      printf("malloc 2.5\n");
+      printf("malloc 2.5\n"); // print begining and end of this method what all values are to see if they change unexpectedly
       curr = curr->next;
   }
   printf("malloc 3\n");
@@ -156,7 +155,7 @@ if (curr->size < newsize) {
   printf("malloc 5\n");
 
   // return pointer to new block (starting after header bc user would overwrite header otherwise)
-  return curr_header + 1; // FIXME: is + HEADERSIZE ok here? there might be a macro for this I could use
+  return NEXT_BLKP(curr_header); // FIXME: is + HEADERSIZE ok here? there might be a macro for this I could use
 return 0;
 }
 
