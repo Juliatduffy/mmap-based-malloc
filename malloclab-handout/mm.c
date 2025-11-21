@@ -12,6 +12,7 @@
 #include "mm.h"
 #include "memlib.h"
 
+#define PUT(p,val) (*(unsignedint*)(p)=(val))
 #define ALIGNMENT 16 // always use 16-byte alignment
 #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~(ALIGNMENT-1)) // rounds up to the nearest multiple of ALIGNMENT
 #define PAGE_ALIGN(size) (((size) + (mem_pagesize()-1)) & ~(mem_pagesize()-1)) // rounds up to the nearest multiple of mem_pagesize()
@@ -31,6 +32,16 @@ block_header * epilogue;
 #define HEADERSIZE sizeof(block_header)
 
 block_header * first_node = NULL; // head of free list
+
+
+void print_free_list_summary(void){
+  printf("free list summary:\n");
+  block_header *ptr = first_node;
+   while( ptr ) {
+      printf( "block addr: %p, size: %ld allocation: %d\n", ptr, ptr->size, ptr->allocated );
+      ptr = ptr->next;
+   }
+}
 
 /*
 * helper for mm_init
@@ -92,7 +103,7 @@ void *mm_malloc(size_t size)
 
   // Now traverse our free list to find the next open spot (first fit)
   block_header * prev = curr->prev;
-  while(curr && (curr->size < new_size)){
+  while((curr != NULL) && (curr->size < new_size)){
       printf("malloc: traversing this ho\n"); 
       prev = curr;
       curr = curr->next;
@@ -121,6 +132,7 @@ void *mm_malloc(size_t size)
   if(prev) prev->next = curr_header-> next;
 
   printf("malloc: memory allocated at payload address: %p\n", curr_header + 1);
+  print_free_list_summary();
   return (void *) (curr_header + 1);
 }
 
