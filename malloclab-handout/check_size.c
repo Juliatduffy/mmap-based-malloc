@@ -9,17 +9,16 @@
 #include "memlib.h"
 #include "pagemap.h"
 
-
-/// BLOCK HEADER FOR ALLOCATED MEMORY
+// BLOCK HEADER FOR ALLOCATED MEMORY TODO: PACK
 typedef struct block_header { 
   size_t size;
   char allocated;
 } block_header; 
 
-/// FREE LIST NODE
+// FREE LIST NODE
 typedef struct node {
-  size_t size; // size of this block
-  void * next; 
+  struct node* prev;
+  struct node* next; 
 } node; 
 
 int main() {

@@ -13,33 +13,29 @@
 #include "memlib.h"
 
 #define HDRP(bp) ((char *)(bp) - sizeof(block_header))
-#define ALIGNMENT 16 // always use 16-byte alignment
-#define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~(ALIGNMENT-1)) // rounds up to the nearest multiple of ALIGNMENT
-#define PAGE_ALIGN(size) (((size) + (mem_pagesize()-1)) & ~(mem_pagesize()-1)) // rounds up to the nearest multiple of mem_pagesize()
+#define ALIGNMENT 16
+#define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~(ALIGNMENT-1))
+#define PAGE_ALIGN(size) (((size) + (mem_pagesize()-1)) & ~(mem_pagesize()-1)) 
 
-
-/// BLOCK HEADER FOR ALLOCATED MEMORY TODO: PACK
+// BLOCK HEADER FOR ALLOCATED MEMORY TODO: PACK
 typedef struct block_header { 
   size_t size;
   char allocated;
 } block_header; 
 
-/// FREE LIST NODE
+// FREE LIST NODE
 typedef struct node {
   struct node* prev;
   struct node* next; 
 } node; 
 
-// TODO: make block footer struct
-
-// TODO make prolog and epilogue for coalescing, make sentinel terminator
-// block_header prolog;
-// block_header epilogue;
-
 #define HEADERSIZE sizeof(block_header) // 16 bytes 
 #define NODESIZE sizeof(node)  // 16 bytes
 
-node *first_node = NULL; // stores head of free linked list, ok to have explicit free list
+node *first_node = NULL; 
+
+// TODO: make block footer struct
+// TODO make prolog and epilogue for coalescing (in each page), make sentinel terminator (for beginning and end of heap)
 
 /*
 * Helper functions
@@ -51,7 +47,7 @@ void mm_free(void *ptr);
 void extend(size_t s);
 void * add_node(void * ptr);
 void * delete_node(void * ptr);
-node* first_fit(size_t size);
+block_header* first_fit(size_t size);
 
 /*
 * Extend the heap size
@@ -68,6 +64,7 @@ void extend(size_t s) {
     
     // update free list now
     node * next = first_node;
+    first_node = (node *) (new_node + 1);
     new_node->size = new_size - NODESIZE;
     new_node-> allocated = 0;
     first_node->next = next;
@@ -116,26 +113,36 @@ void *mm_malloc(size_t size)
   size_t aligned_size = ALIGN(size);
   printf("malloc: size: %ld malloc: padded size with header: %ld\n", size, aligned_size);
   
+  block_header* new_block = NULL;
+
   block_header* mem = first_fit(aligned_size);
-  if (mem->size < aligned_size) {
+
+  if ((!mem) || mem->size < aligned_size) {
     extend(aligned_size);
+    new_block = (block_header *) first_node - 1;
+  }
+  else {
+     new_block = mem;
   }
 
-  block_header* new_block = (block_header *) first_node;
+  node * new_block_node = (node *)new_block + 1;
+  if (new_block_node && new_block_node-> prev) new_block_node-> prev = new_block_node->next;
   new_block->size = aligned_size;
   new_block->allocated = 1;
   
   // return pointer to new block (starting after header and node)
-  return first_node; 
+  return first_node + 1; 
   
 }
 
-node* first_fit(size_t size){
+block_header* first_fit(size_t size){
   node *curr = first_node; 
   while(curr != NULL && ((block_header *) HDRP(curr))-> size < size){
     printf("malloc: traversing this ho\n"); 
     curr = curr->next;
   }
+  if(curr) return((block_header *) HDRP(curr));
+  return NULL;
 }
 
 /*
