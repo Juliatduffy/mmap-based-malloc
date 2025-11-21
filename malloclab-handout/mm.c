@@ -1,6 +1,6 @@
 /*
  * mm-naive.c
- * author: Julia DUffy and CS4400 at the University of Utah
+ * author: Julia Duffy and CS4400 at the University of Utah
  * last edited: 11-20-2025
  * current implementation: explicit free list with no coalescing or splitting (not working)
  */
@@ -53,7 +53,7 @@ block_header* first_fit(size_t size);
 * Extend the heap size
 */
 void extend(size_t s) {
-  printf("extend invoked -----------------------------------\n");
+  printf("------ extend invoked ------\n");
   size_t new_size = PAGE_ALIGN(s);  
     block_header * new_node = mem_map(new_size); 
     printf("%s %ld %s\n", "extend: initialized", new_size, "bytes of memory");
@@ -77,7 +77,7 @@ void extend(size_t s) {
     printf("%s %p\n", "extend: new first node-> next (old first_node):", first_node->next);
     first_node->prev = NULL;
     printf("%s %p\n", "extend: new first node-> prev (should be nil):", first_node->prev);
-    printf("extend: returned successfully\n\n");
+    printf("------ extend returned ------\n");
 }
 
 
@@ -98,13 +98,14 @@ void extend(size_t s) {
  */
 int mm_init(void)
 {
-  printf("\nmm_init invoked -----------------------------------\n");
+  printf("\n\n=================== mm_init invoked ===================\n");
   first_node = NULL;
   extend(1);
   if (!first_node) {
-    printf("mm_init: returned successfully\n\n");
+    printf("error in mm_init\n");
     return -1;
   }
+  printf("=================== mm_init: returned ===================\n\n\n");
   return 0;
 }
 
@@ -122,7 +123,7 @@ int mm_init(void)
 */
 void *mm_malloc(size_t size)
 {
-  printf("mm_malloc invoked -----------------------------------\n");
+  printf("=================== mm_malloc invoked ===================\n");
   // get aligned (by 4096) size, accounting for overhead
   size += HEADERSIZE; 
   size_t aligned_size = ALIGN(size);
@@ -135,29 +136,30 @@ void *mm_malloc(size_t size)
   if ((!mem) || mem->size < aligned_size) { // if can probably be simplified to just if(!mem)
     extend(aligned_size);
     free_block = (block_header *) first_node - 1;
-    printf("malloc: extend called. found new space at node: %p, hdrp%p\n", first_node, free_block);
+    printf("malloc: extend called. found new space at node: %p, hdrp: %p\n", first_node, free_block);
   }
   else {
     free_block = mem;
     printf("malloc: no need to call extend- found some space at node: %p, hdrp: %p\n", free_block - 1, free_block);
-  }
+  
+    // remove node from free list. start by getting ptr to relevant node:
+    printf("we ar using an existing block in the free list so we must update the free list acccordingly:");
+    node* free_list_node = (node *)free_block + 1;
 
-  // remove node from free list. start by getting ptr to relevant node:
-  node* free_list_node = (node *)free_block + 1;
+    // set prev node's next to be our next
+    printf("free_list_node->prev: %p\n", free_list_node->prev);
+    if (free_list_node->prev) {
+      free_list_node->prev->next = free_list_node->next;
+      printf("free_list_node->prev->next: %p\n", free_list_node->prev);
+    }
 
-  // set prev node's next to be our next
-  if (free_list_node->prev) {
-    if(free_list_node->next) free_list_node->prev->next = free_list_node->next;
-    else(free_list_node->prev->next) = NULL;
-  }
-
-  // set next node's prev to be out prev
-  if(free_list_node->next) {
-    if(free_list_node->prev) free_list_node->next->prev = free_list_node->prev;
-    else free_list_node->next->prev = NULL;
-  }
-  if(free_list_node == first_node) {
-    first_node = NULL;
+    // set next node's prev to be out prev
+    if(free_list_node->next) {
+      if(free_list_node->prev) free_list_node->next->prev = free_list_node->prev;
+      else free_list_node->next->prev = NULL;
+    }
+    printf("malloc: free_list_node: %p\n", free_list_node);
+    printf("malloc: first_node: %p\n", first_node);
   }
 
   // update block header so that it has the correct size and the allocated int is 1
@@ -165,7 +167,7 @@ void *mm_malloc(size_t size)
   free_block->allocated = 1;
 
   // return pointer to new block (starting after header)
-  printf("mm_malloc: returned successfully\n\n");
+  printf("=================== mm_malloc: returned ===================\n\n\n");
   return  (node *)free_block + 1; 
   
 }
@@ -175,7 +177,7 @@ void *mm_malloc(size_t size)
  * the end of the free list (meaning the caller will have to call extend)
 */
 block_header* first_fit(size_t size){
-  printf("first_fit invoked ------------------------------------\n");
+  printf("------ first_fit invoked ------\n");
   printf("first_fit: first_node: %p\n", first_node); 
   node *curr = first_node; 
   while((curr!= NULL) && ((block_header *) HDRP(curr))-> size < size){    
@@ -183,8 +185,8 @@ block_header* first_fit(size_t size){
     curr = curr->next;
   }
   if(curr) printf("first_fit: found a free block at: %p\n", curr); 
-  else  printf("first_fit: no free blocks are big enough, need to extend our heap: %p\n", curr); 
-  printf("first_fit: returned successfully\n\n");
+  else  printf("first_fit: no free blocks are big enough, need to call extend.\n"); 
+  printf("------ first_fit returned ------\n");
   if(curr) return((block_header *) HDRP(curr)); 
   return NULL;
 }
