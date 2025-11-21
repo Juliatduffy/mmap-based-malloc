@@ -17,7 +17,7 @@
 #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~(ALIGNMENT-1))
 #define PAGE_ALIGN(size) (((size) + (mem_pagesize()-1)) & ~(mem_pagesize()-1)) 
 
-// BLOCK HEADER FOR ALLOCATED MEMORY TODO: PACK
+// BLOCK HEADER FOR ALLOCATED MEMORY TODO: PACK to 8 bytes
 typedef struct block_header { 
   size_t size;
   char allocated;
@@ -34,7 +34,7 @@ typedef struct node {
 
 node *first_node = NULL; 
 
-// TODO: make block footer struct
+// TODO: make 8 byte block footer struct
 // TODO make prolog and epilogue for coalescing (in each page), make sentinel terminator (for beginning and end of heap)
 
 /*
@@ -53,21 +53,31 @@ block_header* first_fit(size_t size);
 * Extend the heap size
 */
 void extend(size_t s) {
-  size_t new_size = PAGE_ALIGN(s);  // init more
+  printf("extend invoked -----------------------------------\n");
+  size_t new_size = PAGE_ALIGN(s);  
     block_header * new_node = mem_map(new_size); 
-    printf("%s %ld %s\n", "initialize_free_list: initialized", new_size, "bytes of memory\n");
+    printf("%s %ld %s\n", "extend: initialized", new_size, "bytes of memory");
 
     if (new_node == NULL) {
-      printf("initialize_free_list: mem_map error\n");
+      printf("extend: mem_map error\n");
       return;
     }
     
     // update free list now
     node * next = first_node;
-    first_node = (node *) (new_node + 1);
-    new_node->size = new_size - NODESIZE;
-    new_node-> allocated = 0;
+    printf("%s %p\n", "extend: old first node:", next);
+    first_node = (node *) (new_node + 1); // new node / new memory + 1 to account for block_header
+    printf("%s %p\n", "extend: new first node:", first_node);
+    block_header * first_block_header = (block_header *) HDRP(first_node);
+    first_block_header->size = new_size - NODESIZE;
+    printf("%s %ld\n", "extend: new first hdrp size (should be 4080):", first_block_header->size);
+    first_block_header->allocated = 0;
+    printf("%s %d\n", "extend: new first hdrp allocated (should be 0):", first_block_header->allocated);
     first_node->next = next;
+    printf("%s %p\n", "extend: new first node-> next (old first_node):", first_node->next);
+    first_node->prev = NULL;
+    printf("%s %p\n", "extend: new first node-> prev (should be nil):", first_node->prev);
+    printf("extend: returned successfully\n\n");
 }
 
 
@@ -88,10 +98,13 @@ void extend(size_t s) {
  */
 int mm_init(void)
 {
+  printf("\nmm_init invoked -----------------------------------\n");
   first_node = NULL;
   extend(1);
-  if (!first_node)
+  if (!first_node) {
+    printf("mm_init: returned successfully\n\n");
     return -1;
+  }
   return 0;
 }
 
@@ -109,55 +122,83 @@ int mm_init(void)
 */
 void *mm_malloc(size_t size)
 {
+  printf("mm_malloc invoked -----------------------------------\n");
+  // get aligned (by 4096) size, accounting for overhead
   size += HEADERSIZE; 
   size_t aligned_size = ALIGN(size);
-  printf("malloc: size: %ld malloc: padded size with header: %ld\n", size, aligned_size);
+  printf("malloc: size: %ld padded size with header: %ld\n", size, aligned_size);
   
-  block_header* new_block = NULL;
-
+  // find a free block or determine that there are no free blocks
+  block_header* free_block = NULL;
   block_header* mem = first_fit(aligned_size);
 
-  if ((!mem) || mem->size < aligned_size) {
+  if ((!mem) || mem->size < aligned_size) { // if can probably be simplified to just if(!mem)
     extend(aligned_size);
-    new_block = (block_header *) first_node - 1;
+    free_block = (block_header *) first_node - 1;
+    printf("malloc: extend called. found new space at node: %p, hdrp%p\n", first_node, free_block);
   }
   else {
-     new_block = mem;
+    free_block = mem;
+    printf("malloc: no need to call extend- found some space at node: %p, hdrp: %p\n", free_block - 1, free_block);
   }
 
-  node * new_block_node = (node *)new_block + 1;
-  if (new_block_node && new_block_node-> prev) new_block_node-> prev = new_block_node->next;
-  new_block->size = aligned_size;
-  new_block->allocated = 1;
-  
-  // return pointer to new block (starting after header and node)
-  return first_node + 1; 
+  // remove node from free list. start by getting ptr to relevant node:
+  node* free_list_node = (node *)free_block + 1;
+
+  // set prev node's next to be our next
+  if (free_list_node->prev) {
+    if(free_list_node->next) free_list_node->prev->next = free_list_node->next;
+    else(free_list_node->prev->next) = NULL;
+  }
+
+  // set next node's prev to be out prev
+  if(free_list_node->next) {
+    if(free_list_node->prev) free_list_node->next->prev = free_list_node->prev;
+    else free_list_node->next->prev = NULL;
+  }
+  if(free_list_node == first_node) {
+    first_node = NULL;
+  }
+
+  // update block header so that it has the correct size and the allocated int is 1
+  free_block->size = aligned_size;
+  free_block->allocated = 1;
+
+  // return pointer to new block (starting after header)
+  printf("mm_malloc: returned successfully\n\n");
+  return  (node *)free_block + 1; 
   
 }
 
+/*
+ * first_fit - helper method to traverse the free list until we find a free block or until we reach
+ * the end of the free list (meaning the caller will have to call extend)
+*/
 block_header* first_fit(size_t size){
+  printf("first_fit invoked ------------------------------------\n");
+  printf("first_fit: first_node: %p\n", first_node); 
   node *curr = first_node; 
-  while(curr != NULL && ((block_header *) HDRP(curr))-> size < size){
-    printf("malloc: traversing this ho\n"); 
+  while((curr!= NULL) && ((block_header *) HDRP(curr))-> size < size){    
+    printf("first_fit: traversing this ho! curr: %p\n", curr); 
     curr = curr->next;
   }
-  if(curr) return((block_header *) HDRP(curr));
+  if(curr) printf("first_fit: found a free block at: %p\n", curr); 
+  else  printf("first_fit: no free blocks are big enough, need to extend our heap: %p\n", curr); 
+  printf("first_fit: returned successfully\n\n");
+  if(curr) return((block_header *) HDRP(curr)); 
   return NULL;
 }
 
 /*
-* free block at ptr. No need to check if this is a block that we have access to! Just change the 
+* mm_free - free block at ptr. No need to check if this is a block that we have access to! Just change the 
 * block header to be allocated. TODO: add coalescing to this.
 */
 void mm_free(void *ptr)
 {
-  // block_header * header = (block_header *)ptr; // go back to header make sure to ... fix this
-  // header -> allocated = 0;
-  // TODO: make it so it goes back in the free list
+  // TODO: add ptr back to the free list so it can be reused
   // TODO coalesce
   // unmap page if it's all free if there are a decent amount of pages
 }
-
 
 /*
 Helper to print all free list elements
@@ -170,9 +211,3 @@ void print_free_list_summary(void){
       ptr = ptr->next;
    }
 }
-
-/*
-NOTES:
-- should call mem_map as little as possible (dont be calling it when we make a new list node)
-- add to front of free list
-*/
