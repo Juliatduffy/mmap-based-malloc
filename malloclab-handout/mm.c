@@ -1,9 +1,11 @@
 /*
  * mm-naive.c
  * author: Julia Duffy and CS4400 at the University of Utah
- * last edited: 11-20-2025
- * current implementation: explicit free list with no coalescing or splitting (not working)
+ * last edited: 11-22-2025
+ * current implementation: explicit free list with no coalescing or splitting (10/100).
+ * next implementation: same thing but with freeing.
  */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -17,25 +19,22 @@
 #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~(ALIGNMENT-1))
 #define PAGE_ALIGN(size) (((size) + (mem_pagesize()-1)) & ~(mem_pagesize()-1)) 
 
-// BLOCK HEADER FOR ALLOCATED MEMORY TODO: PACK to 8 bytes
+// BLOCK HEADER FOR ALLOCATED MEMORY
 typedef struct block_header { 
   size_t size;
   char allocated;
 } block_header; 
 
-// FREE LIST NODE
+// FREE LIST NODE FOR FREE MEMORY
 typedef struct node {
   struct node* prev;
   struct node* next; 
 } node; 
 
-#define HEADERSIZE sizeof(block_header) // 16 bytes 
-#define NODESIZE sizeof(node)  // 16 bytes
+#define HEADERSIZE sizeof(block_header) // 16 bytes for now
+#define NODESIZE sizeof(node)  // 16 bytes for now
 
 node *head = NULL; 
-
-// TODO: make 8 byte block footer struct
-// TODO make prolog and epilogue for coalescing (in each page), make sentinel terminator (for beginning and end of heap)
 
 /*
 * Helper functions
@@ -86,9 +85,11 @@ void add_node(node *ptr) {
 }
 
 /*
-* Extend: extends our "heap" size
+* extend - extends our "heap" size
+* 
 * 1. align the given size to me a mutiple of 4096
 * 2. allocate at least 4096 bytes of heap memory using mem_map
+* TODO
 * 3. update the free list, inserting new memory as the head of the list
 */
 void extend(size_t s) {
@@ -108,19 +109,11 @@ void extend(size_t s) {
 
 
 /* 
- * mm_init - initialize the malloc package. Not 100% sure what to do here
+ * mm_init - initialize the malloc package
  * 
- * This method:
- * 1. creates the free list and allocates a free block using mem_map (call extend method)
- * 2. returns -1 on an error, 0 on success
- * 
- * pseudo code:
- * free list head = null
- * maybe keep track of # mapped pages
- * extend (1) -> centralizes calling memmap returns pointer to new block extend 1 because minimum is 4096 and we dont need morethan that bc we ewant good util
- *  split if possible
- *  allocate all space then turn rest into free block
- * 
+ * 1. reset the free list 
+ * 2. call the extend method
+ * 3. return -1 on an error, 0 on success
  */
 int mm_init(void)
 {
@@ -134,16 +127,15 @@ int mm_init(void)
 }
 
 /* 
-*  mm_malloc - Allocate a block by using bytes from new_block,
-*  grabbing a new page if necessary. need to split big block
+*  mm_malloc - Allocate a block in the free list,
+*  grabbing a new page if necessary.
 *  
-*  This method
-*  1. aligns/pads the given size 
-*  2. traverses the free list until it finds an empty spot that is big enough or gets to the end of the list
-*  3. If we are at the end of the list, then  we call extend method (haven't implemented yet)
-*     to get a new page of heap memory of size 4096 bytes. Make sure to update free list accordingly.
-*  4. Then we create a new block header for the memory we are allocating
-*  5. Then return the pointer to the new memory we just allocated.
+*  1. align/pad the given size 
+*  2. try to find a free block in the free list
+*  3. call extend if necessary, which extends our available heap memory
+*     by calling mem_map, and adds a new node to the head of our free list
+*  4. create a new block header for the memory we are allocating
+*  5. return the pointer to the new memory (after the block header)
 */
 void *mm_malloc(size_t size)
 {
@@ -167,36 +159,31 @@ void *mm_malloc(size_t size)
   // delete node from the free list
   delete_node(free_node);
 
-  //print_free_list_summary();
-
-  // return pointer to new block (starting after header)
-  return  free_node; 
+  // return pointer to newly allocated block
+  return free_node; 
   
 }
 
 /*
  * first_fit - helper method to traverse the free list until we find a free block or until we reach
- * the end of the free list (meaning the caller will have to call extend)
+ * the end of the free list (in which case the caller will have to call extend)
 */
 node* first_fit(size_t size){
-  //printf("first_fit: head: %p\n", head); 
   node *curr = head; 
   while((curr!= NULL) && ((block_header *) HDRP(curr))-> size < size){    
     curr = curr->next;
   }
-  //printf("first_fit returned: %p\n", curr);
   return curr;
 }
 
 /*
-* mm_free - free block at ptr. No need to check if this is a block that we have access to! Just change the 
-* block header to be allocated. TODO: add coalescing to this.
+* mm_free - free block at ptr. 
 */
 void mm_free(void *ptr)
 {
   // TODO: add ptr back to the free list so it can be reused
   // TODO coalesce
-  // unmap page if it's all free if there are a decent amount of pages
+  // unmap page if it's all free and there are a decent amount of pages
 }
 
 /*
@@ -211,3 +198,36 @@ void print_free_list_summary(void){
       ptr = ptr->next;
    }
 }
+
+/*
+Notes: 
+- we don't need to check that free is being called on memory that we have acess to 
+  for this assignment we can just assume we can free whatever pointer is passed in.
+
+- The reason why we don't want to get more heap memory at once is because 
+  if we ran a test where we were just freeing and allocating the same 8 bytes
+  then we would haave terrible utilization.
+
+- Breaking things up into helpers is really useful for this assignemnt
+
+- Don't call mem_map too oftem because it is slow
+
+- Eventually it will be a good idea to map pages so that if we have a decent amount of 
+  pages of memory and we have a completely freed page, we can remove that entire page 
+  from the free list. we can do this by keeping track of mapped pages
+
+- extend should eventually implement splitting
+
+*/
+
+
+// TODO: 
+// - implement free without coalescing yet
+// - pack header to 8 bytes with pack function
+// - make 8 byte block footer struct
+// - make prolog and epilogue for coalescing within each heap page
+// - make sentinel and terminator blocks (for beginning and end of heap)
+// - implement splitting
+// - implement coalescing
+// - implement paging? 
+// - 
