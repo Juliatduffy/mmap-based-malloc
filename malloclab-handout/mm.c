@@ -34,6 +34,8 @@ typedef struct node {
 #define HEADERSIZE sizeof(block_header) // 16 bytes for now
 #define NODESIZE sizeof(node)  // 16 bytes for now
 
+int mapped_pages = 0;
+
 node *head = NULL; 
 
 /*
@@ -49,7 +51,7 @@ void delete_node(node* ptr);
 node* first_fit(size_t size);
 
 /*
- * delete node from the free list 
+ * delete_node - deletes node from the free list 
 */
 void delete_node(node* ptr){
   if(!head || !ptr) {
@@ -68,7 +70,7 @@ void delete_node(node* ptr){
 }
 
 /*
- * add node to the free list (at the head for now) 
+ * add_node - add a new node to the free list at the head
 */
 void add_node(node *ptr) {
     if (!ptr) {
@@ -89,22 +91,27 @@ void add_node(node *ptr) {
 * 
 * 1. align the given size to me a mutiple of 4096
 * 2. allocate at least 4096 bytes of heap memory using mem_map
-* TODO
-* 3. update the free list, inserting new memory as the head of the list
+* 3. if size < mem_map then allocate size amount of bytes and add the rest
+*    of the new block to the free list 
+* 4. update the free list, inserting new memory as the head of the list
 */
 void extend(size_t s) {
   size_t new_size = PAGE_ALIGN(s);  
   block_header * new_block = mem_map(new_size); 
-
+  
   if (new_block == NULL) {
     printf("extend: mem_map error\n");
     return;
   }  
-
+  
+  mapped_pages++;
   new_block->size = new_size;
   new_block->allocated = 0;
 
-  add_node((node*)(new_block + 1));  
+  add_node((node*)(new_block + 1)); 
+  
+  // TODO: if size < mem_map then allocate size amount of bytes and add the rest
+  // of the new block to the free list 
 }
 
 
@@ -118,6 +125,7 @@ void extend(size_t s) {
 int mm_init(void)
 {
   head = NULL;
+  mapped_pages = 0;
   extend(1);
   if (!head) {
     printf("error in mm_init\n");
@@ -127,7 +135,7 @@ int mm_init(void)
 }
 
 /* 
-*  mm_malloc - Allocate a block in the free list,
+*  mm_malloc - allocate a block in the free list,
 *  grabbing a new page if necessary.
 *  
 *  1. align/pad the given size 
@@ -181,13 +189,15 @@ node* first_fit(size_t size){
 */
 void mm_free(void *ptr)
 {
+  add_node(ptr);
+  block_header* new_block = (block_header *) HDRP(ptr);
+  new_block->allocated = 1;
   // TODO: add ptr back to the free list so it can be reused
   // TODO coalesce
-  // unmap page if it's all free and there are a decent amount of pages
 }
 
 /*
-* Helper to print all free list elements
+* print_free_list_summary - helper to print all free list elements
 */
 void print_free_list_summary(void){
   printf("free list summary:\n");
@@ -230,4 +240,3 @@ Notes:
 // - implement splitting
 // - implement coalescing
 // - implement paging? 
-// - 
