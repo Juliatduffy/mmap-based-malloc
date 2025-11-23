@@ -14,15 +14,19 @@
 #include "mm.h"
 #include "memlib.h"
 
+#define PACK(size, alloc) ((size) | (alloc))
 #define HDRP(bp) ((char *)(bp) - sizeof(block_header))
 #define ALIGNMENT 16
 #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~(ALIGNMENT-1))
 #define PAGE_ALIGN(size) (((size) + (mem_pagesize()-1)) & ~(mem_pagesize()-1)) 
+#define GET(p)(*(unsigned int *)(p))
+#define GET_ALLOC(p) (GET(p) & 0x1)
+#define GET_SIZE(p) (GET(p) & ~0xF)
 
 // BLOCK HEADER FOR ALLOCATED MEMORY
 typedef struct block_header { 
-  size_t size;
-  char allocated;
+  size_t packed;
+  size_t padding; // remove this once alignment starts
 } block_header; 
 
 // FREE LIST NODE FOR FREE MEMORY
@@ -31,7 +35,7 @@ typedef struct node {
   struct node* next; 
 } node; 
 
-#define HEADERSIZE sizeof(block_header) // 16 bytes for now
+#define HEADERSIZE sizeof(block_header) // 8 bytes
 #define NODESIZE sizeof(node)  // 16 bytes for now
 
 int mapped_pages = 0;
@@ -105,8 +109,8 @@ void extend(size_t s) {
   }  
   
   mapped_pages++;
-  new_block->size = new_size;
-  new_block->allocated = 0;
+  size_t packed = PACK(new_size, 0);
+  new_block->packed = packed;
 
   add_node((node*)(new_block + 1)); 
   
@@ -161,8 +165,7 @@ void *mm_malloc(size_t size)
 
   // add block metadata
   block_header* free_block = (block_header *) HDRP(free_node);
-  free_block->size = aligned_size;
-  free_block->allocated = 1;
+  free_block->packed = PACK(aligned_size, 1);
 
   // delete node from the free list
   delete_node(free_node);
@@ -178,7 +181,7 @@ void *mm_malloc(size_t size)
 */
 node* first_fit(size_t size){
   node *curr = head; 
-  while((curr!= NULL) && ((block_header *) HDRP(curr))-> size < size){    
+  while((curr!= NULL) && (GET_SIZE(HDRP(curr)))< size){    
     curr = curr->next;
   }
   return curr;
@@ -191,8 +194,7 @@ void mm_free(void *ptr)
 {
   add_node(ptr);
   block_header* new_block = (block_header *) HDRP(ptr);
-  new_block->allocated = 1;
-  // TODO: add ptr back to the free list so it can be reused
+  new_block->packed = PACK(GET_SIZE(new_block), 0);
   // TODO coalesce
 }
 
@@ -232,7 +234,6 @@ Notes:
 
 
 // TODO: 
-// - implement free without coalescing yet
 // - pack header to 8 bytes with pack function
 // - make 8 byte block footer struct
 // - make prolog and epilogue for coalescing within each heap page

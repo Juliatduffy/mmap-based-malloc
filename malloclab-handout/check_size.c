@@ -9,6 +9,8 @@
 #include "memlib.h"
 #include "pagemap.h"
 
+#define PACK(size, alloc) ((size) | (alloc))
+
 // BLOCK HEADER FOR ALLOCATED MEMORY TODO: PACK
 typedef struct block_header { 
   size_t size;
@@ -22,5 +24,6 @@ typedef struct node {
 } node; 
 
 int main() {
-    printf("Size of node: %zu bytes. Size of block header: %zu\n", sizeof(node), sizeof(block_header));
+  size_t packed = PACK(2, 1);
+  printf("Size of node: %zu bytes. Size of block header: %zu\n", sizeof(node), sizeof(packed));
 }
