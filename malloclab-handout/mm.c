@@ -120,10 +120,6 @@ void extend(size_t s) {
   footer->allocated = 0;
 
   add_node(bp); 
-  
-  // TODO: if size < mem_map then allocate size amount of bytes and add the rest
-  // of the new block to the free list 
-
 }
 
 
@@ -173,17 +169,26 @@ void *mm_malloc(size_t size)
 
   // add block metadata
   block_header* header = (block_header *) HDRP(bp);
+  block_footer* footer = (block_footer *)FTRP(bp);
+
+  // // TODO: if size < mem_map then allocate size amount of bytes and add the rest
+  // // of the new block to the free list 
+  // if(aligned_size < header->size){
+  //   node* new_bp = (node*)((char *)footer) + OVERHEAD;
+  //   add_node(new_bp); // go to start of footer add footer and add header to get new bp
+  //   block_header* new_header = (block_header*) HDRP(new_bp);
+  //   block_footer* new_footer = (block_footer*) FTRP(new_bp);
+  //   size_t new_size = header->size - aligned_size - OVERHEAD;
+  //   new_header->size = new_size;
+  //   new_header->allocated = 0;
+  //   new_footer->size = new_size;
+  //   new_footer->allocated = 0;
+  // }
+
   header->size = aligned_size;
   header->allocated = 1;
-
-  block_footer* footer = (block_footer *)FTRP(bp);
   footer->size = aligned_size;
   footer->allocated = 1;
-
-  // if(aligned_size < header->size){
-  //   // TODO add a free node after this one
-  // }
-  
 
   // delete node from the free list
   delete_node(bp);
