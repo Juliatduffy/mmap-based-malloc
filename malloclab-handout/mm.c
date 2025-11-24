@@ -3,7 +3,7 @@
  * author: Julia Duffy and CS4400 at the University of Utah
  * last edited: 11-22-2025
  * current implementation: explicit free list with no coalescing or splitting (10/100).
- * next implementation: same thing but with freeing.
+ * next implementation: same thing but with block footers and splitting.
  */
 
 #include <stdio.h>
@@ -13,8 +13,8 @@
 #include <string.h>
 #include "mm.h"
 #include "memlib.h"
+#include "macros.c"
 
-#define HDRP(bp) ((char *)(bp) - sizeof(block_header))
 #define ALIGNMENT 16
 #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~(ALIGNMENT-1))
 #define PAGE_ALIGN(size) (((size) + (mem_pagesize()-1)) & ~(mem_pagesize()-1)) 
@@ -25,6 +25,12 @@ typedef struct block_header {
   char allocated;
 } block_header; 
 
+// BLOCK FOOTER FOR ALLOCATED MEMORY
+typedef struct block_footer { 
+  size_t size;
+  char allocated;
+} block_footer; 
+
 // FREE LIST NODE FOR FREE MEMORY
 typedef struct node {
   struct node* prev;
@@ -32,10 +38,10 @@ typedef struct node {
 } node; 
 
 #define HEADERSIZE sizeof(block_header) // 16 bytes for now
+#define FOOTERSIZE sizeof(block_footer) // 16 bytes for now
 #define NODESIZE sizeof(node)  // 16 bytes for now
 
 int mapped_pages = 0;
-
 node *head = NULL; 
 
 /*
@@ -97,21 +103,27 @@ void add_node(node *ptr) {
 */
 void extend(size_t s) {
   size_t new_size = PAGE_ALIGN(s);  
-  block_header * new_block = mem_map(new_size); 
+  block_header * header = mem_map(new_size); 
   
-  if (new_block == NULL) {
+  if (header == NULL) {
     printf("extend: mem_map error\n");
     return;
   }  
-  
   mapped_pages++;
-  new_block->size = new_size;
-  new_block->allocated = 0;
+  new_size = new_size - OVERHEAD;
+  header->size = new_size;
+  header->allocated = 0;
+  
+  node* bp = (node*)(header + 1);
+  block_footer * footer = (block_footer *)FTRP(bp);
+  footer->size = new_size;
+  footer->allocated = 0;
 
-  add_node((node*)(new_block + 1)); 
+  add_node(bp); 
   
   // TODO: if size < mem_map then allocate size amount of bytes and add the rest
   // of the new block to the free list 
+
 }
 
 
@@ -147,28 +159,37 @@ int mm_init(void)
 */
 void *mm_malloc(size_t size)
 {
-  size += HEADERSIZE; 
+  size += OVERHEAD; 
   size_t aligned_size = ALIGN(size);
   
   // try to find a free block
-  node* free_node = first_fit(aligned_size);
+  node* bp = first_fit(aligned_size);
 
   // if there are no free blocks, extend
-  if (!free_node) {
+  if (!bp) {
     extend(aligned_size);
-    free_node = head;
+    bp = head;
   }
 
   // add block metadata
-  block_header* free_block = (block_header *) HDRP(free_node);
-  free_block->size = aligned_size;
-  free_block->allocated = 1;
+  block_header* header = (block_header *) HDRP(bp);
+  header->size = aligned_size;
+  header->allocated = 1;
+
+  block_footer* footer = (block_footer *)FTRP(bp);
+  footer->size = aligned_size;
+  footer->allocated = 1;
+
+  // if(aligned_size < header->size){
+  //   // TODO add a free node after this one
+  // }
+  
 
   // delete node from the free list
-  delete_node(free_node);
+  delete_node(bp);
 
   // return pointer to newly allocated block
-  return free_node; 
+  return bp; 
   
 }
 
@@ -190,10 +211,11 @@ node* first_fit(size_t size){
 void mm_free(void *ptr)
 {
   add_node(ptr);
-  block_header* new_block = (block_header *) HDRP(ptr);
-  new_block->allocated = 1;
-  // TODO: add ptr back to the free list so it can be reused
-  // TODO coalesce
+  block_header* header = (block_header *)HDRP(ptr);
+  block_footer* footer = (block_footer *)FTRP(ptr);
+  header->allocated = 0;
+  footer->allocated = 0;
+  // TODO: coalesce
 }
 
 /*
