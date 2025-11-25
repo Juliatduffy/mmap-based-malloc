@@ -110,7 +110,6 @@ void extend(size_t s) {
     return;
   }  
   mapped_pages++;
-  new_size = new_size - OVERHEAD;
   header->size = new_size;
   header->allocated = 0;
   
@@ -141,6 +140,47 @@ int mm_init(void)
   }
   return 0;
 }
+/* Set a block to allocated 
+ * Update block headers/footers as needed 
+ * Update free list if applicable 
+ * Split block if applicable 
+ */
+static void set_allocated(void *bp, size_t size){  
+  // set block as allocated
+  block_header* header = (block_header *) HDRP(bp);
+  block_footer* footer = (block_footer *)FTRP(bp);
+  size_t old_size = header->size;
+  header->size = size;
+  header->allocated = 1;
+  footer->size = size;
+  footer->allocated = 1;
+  delete_node(bp);
+
+  // split if possible
+  if(size < old_size - OVERHEAD){
+    node* new_bp = (node*)((char *)footer + OVERHEAD); // + overhead bc header and footer
+    size_t new_size = old_size - header->size;
+    block_header* new_header = (block_header*) HDRP(new_bp);
+    block_footer* new_footer = (block_footer*) FTRP(new_bp);
+    printf("Size: %ld \n", size);
+    printf("Old size: %ld \n", old_size);
+    printf("New size: %ld \n", new_size);
+    printf("Address of bp: %p \n", bp);
+    printf("Address of header: %p \n", header);
+    printf("Address of footer: %p \n", footer);
+    printf("Address of next header: %p \n", new_header);
+    printf("Address of next footer: %p \n", new_footer);
+
+    // add_node(new_bp); 
+    // block_header* new_header = (block_header*) HDRP(new_bp);
+    // block_footer* new_footer = (block_footer*) FTRP(new_bp);
+    // size_t new_size = header->size - size - OVERHEAD;
+    // new_header->size = new_size;
+    // new_header->allocated = 0;
+    // new_footer->size = new_size;
+    // new_footer->allocated = 0;
+  }
+}
 
 /* 
 *  mm_malloc - allocate a block in the free list,
@@ -166,36 +206,10 @@ void *mm_malloc(size_t size)
     extend(aligned_size);
     bp = head;
   }
-
-  // add block metadata
-  block_header* header = (block_header *) HDRP(bp);
-  block_footer* footer = (block_footer *)FTRP(bp);
-
-  // // TODO: if size < mem_map then allocate size amount of bytes and add the rest
-  // // of the new block to the free list 
-  // if(aligned_size < header->size){
-  //   node* new_bp = (node*)((char *)footer) + OVERHEAD;
-  //   add_node(new_bp); // go to start of footer add footer and add header to get new bp
-  //   block_header* new_header = (block_header*) HDRP(new_bp);
-  //   block_footer* new_footer = (block_footer*) FTRP(new_bp);
-  //   size_t new_size = header->size - aligned_size - OVERHEAD;
-  //   new_header->size = new_size;
-  //   new_header->allocated = 0;
-  //   new_footer->size = new_size;
-  //   new_footer->allocated = 0;
-  // }
-
-  header->size = aligned_size;
-  header->allocated = 1;
-  footer->size = aligned_size;
-  footer->allocated = 1;
-
-  // delete node from the free list
-  delete_node(bp);
-
-  // return pointer to newly allocated block
-  return bp; 
   
+  set_allocated(bp, aligned_size);
+
+  return bp; 
 }
 
 /*
