@@ -110,7 +110,7 @@ void extend(size_t s) {
     return;
   }  
   mapped_pages++;
-  header->size = new_size;
+  header->size = new_size; 
   header->allocated = 0;
   
   node* bp = (node*)(header + 1);
@@ -140,46 +140,61 @@ int mm_init(void)
   }
   return 0;
 }
+// for now lets ust assum ethat the size of the headers and footers does not include
+// the overhead but when we add to memory we scale size up to include overhead
+
 /* Set a block to allocated 
- * Update block headers/footers as needed 
- * Update free list if applicable 
- * Split block if applicable 
- */
-static void set_allocated(void *bp, size_t size){  
-  // set block as allocated
+* Update block headers/footers as needed 
+* Update free list if applicable 
+* Split block if applicable 
+*/
+static void set_allocated(void *bp, size_t size){   // remember this size includes header / footer
   block_header* header = (block_header *) HDRP(bp);
   block_footer* footer = (block_footer *)FTRP(bp);
   size_t old_size = header->size;
+  size_t extra_space = header->size - size;
   header->size = size;
+  delete_node(bp);
+  
+  // split if possible making sure the space is not unreasonably small
+  if(extra_space < (OVERHEAD + NODESIZE + __WORDSIZE)){
+    header->size = old_size;
+  }
+  else {
+    // update allocated block to be smaller
+    footer = (block_footer *)FTRP(bp);
+    // set up the new free list node
+    size_t new_size = extra_space - OVERHEAD;
+    node* new_bp = (node*)(((char *)footer) + OVERHEAD);
+    block_header* new_header = (block_header*) HDRP(new_bp);
+    block_footer* new_footer = (block_footer*) ((char*)new_bp + new_size);
+    add_node(new_bp); 
+    
+    // update block header and footer for the new node
+    new_header->size = new_size;
+    new_header->allocated = 0;
+    new_footer->size = new_size;
+    new_footer->allocated = 0;
+    
+    // uncomment to debug
+    // printf("total space: %ld\n", header->size);
+    // printf("size to allocate: %ld\n", size);
+    // printf("extra space: %ld\n", extra_space);
+    // printf("Address of header: %p \n", header);
+    // printf("Relative address of header: %ld \n", header - header);
+    // printf("Relative address of bp: %ld \n", (char*) bp - (char*)header);
+    // printf("Relative address of footer: %ld \n", (char*)footer - (char*)header);
+    // printf("Relative address of new header: %ld \n", (char*)new_header - (char*)header);
+    // printf("Relative address of new bp: %ld \n", (char*)new_bp - (char*)header);
+    // printf("Relative address of new footer: %ld \n", (char*)new_footer - (char*)header);
+    // printf("Size of free block: %ld\n", new_header->size);
+    // printf("Size of allocated block: %ld\n", size);
+  }
+
+  // update the allocated block
   header->allocated = 1;
   footer->size = size;
   footer->allocated = 1;
-  delete_node(bp);
-
-  // split if possible
-  if(size < old_size - OVERHEAD){
-    node* new_bp = (node*)((char *)footer + OVERHEAD); // + overhead bc header and footer
-    size_t new_size = old_size - header->size;
-    block_header* new_header = (block_header*) HDRP(new_bp);
-    block_footer* new_footer = (block_footer*) FTRP(new_bp);
-    printf("Size: %ld \n", size);
-    printf("Old size: %ld \n", old_size);
-    printf("New size: %ld \n", new_size);
-    printf("Address of bp: %p \n", bp);
-    printf("Address of header: %p \n", header);
-    printf("Address of footer: %p \n", footer);
-    printf("Address of next header: %p \n", new_header);
-    printf("Address of next footer: %p \n", new_footer);
-
-    // add_node(new_bp); 
-    // block_header* new_header = (block_header*) HDRP(new_bp);
-    // block_footer* new_footer = (block_footer*) FTRP(new_bp);
-    // size_t new_size = header->size - size - OVERHEAD;
-    // new_header->size = new_size;
-    // new_header->allocated = 0;
-    // new_footer->size = new_size;
-    // new_footer->allocated = 0;
-  }
 }
 
 /* 
@@ -197,7 +212,7 @@ void *mm_malloc(size_t size)
 {
   size += OVERHEAD; 
   size_t aligned_size = ALIGN(size);
-  
+ 
   // try to find a free block
   node* bp = first_fit(aligned_size);
 
@@ -206,9 +221,7 @@ void *mm_malloc(size_t size)
     extend(aligned_size);
     bp = head;
   }
-  
   set_allocated(bp, aligned_size);
-
   return bp; 
 }
 
