@@ -21,14 +21,12 @@
 
 // BLOCK HEADER FOR ALLOCATED MEMORY
 typedef struct block_header { 
-  size_t size;
-  char allocated;
+  size_t packed;
 } block_header; 
 
 // BLOCK FOOTER FOR ALLOCATED MEMORY
 typedef struct block_footer { 
-  size_t size;
-  char allocated;
+  size_t packed;
 } block_footer; 
 
 // FREE LIST NODE FOR FREE MEMORY
@@ -110,13 +108,11 @@ void extend(size_t s) {
     return;
   }  
   mapped_pages++;
-  header->size = new_size; 
-  header->allocated = 0;
+  header->packed = PACK(new_size, 0);
   
   node* bp = (node*)(header + 1);
   block_footer * footer = (block_footer *)FTRP(bp);
-  footer->size = new_size;
-  footer->allocated = 0;
+  footer->packed = PACK(new_size, 0);
 
   add_node(bp); 
 }
@@ -151,14 +147,14 @@ int mm_init(void)
 static void set_allocated(void *bp, size_t size){   // remember this size includes header / footer
   block_header* header = (block_header *) HDRP(bp);
   block_footer* footer = (block_footer *)FTRP(bp);
-  size_t old_size = header->size;
-  size_t extra_space = header->size - size;
-  header->size = size;
+  size_t old_size = GET_SIZE(header);
+  size_t extra_space = old_size - size;
+  header->packed = PACK(size, GET_ALLOC(header));
   delete_node(bp);
   
   // split if possible making sure the space is not unreasonably small
   if(extra_space < (OVERHEAD + NODESIZE + __WORDSIZE)){
-    header->size = old_size;
+    header->packed = PACK(old_size, GET_ALLOC(header));
   }
   else {
     // update allocated block to be smaller
@@ -171,30 +167,13 @@ static void set_allocated(void *bp, size_t size){   // remember this size includ
     add_node(new_bp); 
     
     // update block header and footer for the new node
-    new_header->size = new_size;
-    new_header->allocated = 0;
-    new_footer->size = new_size;
-    new_footer->allocated = 0;
-    
-    // uncomment to debug
-    // printf("total space: %ld\n", header->size);
-    // printf("size to allocate: %ld\n", size);
-    // printf("extra space: %ld\n", extra_space);
-    // printf("Address of header: %p \n", header);
-    // printf("Relative address of header: %ld \n", header - header);
-    // printf("Relative address of bp: %ld \n", (char*) bp - (char*)header);
-    // printf("Relative address of footer: %ld \n", (char*)footer - (char*)header);
-    // printf("Relative address of new header: %ld \n", (char*)new_header - (char*)header);
-    // printf("Relative address of new bp: %ld \n", (char*)new_bp - (char*)header);
-    // printf("Relative address of new footer: %ld \n", (char*)new_footer - (char*)header);
-    // printf("Size of free block: %ld\n", new_header->size);
-    // printf("Size of allocated block: %ld\n", size);
+    new_header->packed = PACK(new_size, 0);
+    new_footer->packed = PACK(new_size, 0);
   }
 
   // update the allocated block
-  header->allocated = 1;
-  footer->size = size;
-  footer->allocated = 1;
+  header->packed = PACK(GET_SIZE(header), 1);
+  footer->packed = PACK(GET_SIZE(footer), 1);
 }
 
 /* 
@@ -231,7 +210,7 @@ void *mm_malloc(size_t size)
 */
 node* first_fit(size_t size){
   node *curr = head; 
-  while((curr!= NULL) && ((block_header *) HDRP(curr))-> size < size){    
+  while((curr!= NULL) && (GET_SIZE((block_header *) HDRP(curr))) < size){    
     curr = curr->next;
   }
   return curr;
@@ -245,8 +224,8 @@ void mm_free(void *ptr)
   add_node(ptr);
   block_header* header = (block_header *)HDRP(ptr);
   block_footer* footer = (block_footer *)FTRP(ptr);
-  header->allocated = 0;
-  footer->allocated = 0;
+  header->packed = PACK(GET_SIZE(header), 0);
+  footer->packed = PACK(GET_SIZE(footer), 0);
   // TODO: coalesce
 }
 
@@ -294,3 +273,18 @@ Notes:
 // - implement splitting
 // - implement coalescing
 // - implement paging? 
+
+    
+    // uncomment to debug
+    // printf("total space: %ld\n", header->size);
+    // printf("size to allocate: %ld\n", size);
+    // printf("extra space: %ld\n", extra_space);
+    // printf("Address of header: %p \n", header);
+    // printf("Relative address of header: %ld \n", header - header);
+    // printf("Relative address of bp: %ld \n", (char*) bp - (char*)header);
+    // printf("Relative address of footer: %ld \n", (char*)footer - (char*)header);
+    // printf("Relative address of new header: %ld \n", (char*)new_header - (char*)header);
+    // printf("Relative address of new bp: %ld \n", (char*)new_bp - (char*)header);
+    // printf("Relative address of new footer: %ld \n", (char*)new_footer - (char*)header);
+    // printf("Size of free block: %ld\n", new_header->size);
+    // printf("Size of allocated block: %ld\n", size);

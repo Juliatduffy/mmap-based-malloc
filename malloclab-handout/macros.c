@@ -21,21 +21,3 @@
 // Given a header pointer, get the alloc or size 
 #define GET_ALLOC(p) (GET(p) & 0x1)
 #define GET_SIZE(p) (GET(p) & ~0xF)
-
-/* Set a block to allocated 
- * Update block headers/footers as needed 
- * Update free list if applicable 
- * Split block if applicable 
- */
-//static void set_allocated(void *b, size_t size);
-
-/* Request more memory by calling mem_map 
- * Initialize the new chunk of memory as applicable 
- * Update free list if applicable 
- */
-//static void extend(size_t s);
-
-/* Coalesce a free block if applicable 
- * Returns pointer to new coalesced block 
- */
-//static void* coalesce(void *bp);
