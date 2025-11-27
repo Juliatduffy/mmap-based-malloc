@@ -102,10 +102,10 @@ void extend(size_t s) {
   PUT(new_page + 1, PACK(OVERHEAD, 1));  // prologue header
   PUT(new_page + 2,  PACK(OVERHEAD, 1));   // prologue footer
   PUT(new_page + 3,  PACK(size - EXTEND_OVERHEAD, 0));   // block header
-  PUT((char*)new_page + size - OVERHEAD, PACK(size, 0));  // block footer
-  PUT((char*)new_page + size - HEADERSIZE, PACK(0, 1));  // epilogue header
-  
   node* bp = (node*)(new_page + 4);  // payload pointer
+  PUT(FTRP(bp), PACK(size - EXTEND_OVERHEAD, 0));  // block footer
+  PUT(FTRP(bp) + FOOTERSIZE, PACK(0, 1));  // epilogue header
+  
   add_node(bp);
 }
 
