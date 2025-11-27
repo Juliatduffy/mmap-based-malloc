@@ -19,15 +19,9 @@
 #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~(ALIGNMENT-1))
 #define PAGE_ALIGN(size) (((size) + (mem_pagesize()-1)) & ~(mem_pagesize()-1)) 
 
-// BLOCK HEADER FOR ALLOCATED MEMORY
-typedef struct block_header { 
-  size_t packed;
-} block_header; 
-
-// BLOCK FOOTER FOR ALLOCATED MEMORY
-typedef struct block_footer { 
-  size_t packed;
-} block_footer; 
+// BLOCK HEADER AND FOOTER FOR ALLOCATED MEMORY
+typedef size_t block_header;
+typedef size_t block_footer;
 
 // FREE LIST NODE FOR FREE MEMORY
 typedef struct node {
@@ -35,11 +29,12 @@ typedef struct node {
   struct node* next; 
 } node; 
 
-#define HEADERSIZE sizeof(block_header) // 16 bytes for now
-#define FOOTERSIZE sizeof(block_footer) // 16 bytes for now
-#define NODESIZE sizeof(node)  // 16 bytes for now
+#define HEADERSIZE sizeof(block_header) // 8 bytes
+#define FOOTERSIZE sizeof(block_footer) // 8 bytes
+#define OVERHEAD (sizeof(block_header)+sizeof(block_footer)) // 16 bytes
+#define EXTEND_OVERHEAD (4 * sizeof(block_header)) // 32 bytes
+#define NODESIZE sizeof(node)  // 16 bytes 
 
-int mapped_pages = 0;
 node *head = NULL; 
 
 /*
@@ -100,21 +95,18 @@ void add_node(node *ptr) {
 * 4. update the free list, inserting new memory as the head of the list
 */
 void extend(size_t s) {
-  size_t new_size = PAGE_ALIGN(s);  
-  block_header * header = mem_map(new_size); 
-  
-  if (header == NULL) {
-    printf("extend: mem_map error\n");
-    return;
-  }  
-  mapped_pages++;
-  header->packed = PACK(new_size, 0);
-  
-  node* bp = (node*)(header + 1);
-  block_footer * footer = (block_footer *)FTRP(bp);
-  footer->packed = PACK(new_size, 0);
+  size_t size = PAGE_ALIGN(s); 
+  block_header * new_page = mem_map(size);
 
-  add_node(bp); 
+  PUT(new_page, 0);  // alignment
+  PUT(new_page + 1, PACK(OVERHEAD, 1));  // prologue header
+  PUT(new_page + 2,  PACK(OVERHEAD, 1));   // prologue footer
+  PUT(new_page + 3,  PACK(size - EXTEND_OVERHEAD, 0));   // block header
+  PUT((char*)new_page + size - OVERHEAD, PACK(size, 0));  // block footer
+  PUT((char*)new_page + size - HEADERSIZE, PACK(0, 1));  // epilogue header
+  
+  node* bp = (node*)(new_page + 4);  // payload pointer
+  add_node(bp);
 }
 
 
@@ -128,7 +120,6 @@ void extend(size_t s) {
 int mm_init(void)
 {
   head = NULL;
-  mapped_pages = 0;
   extend(1);
   if (!head) {
     printf("error in mm_init\n");
@@ -136,44 +127,39 @@ int mm_init(void)
   }
   return 0;
 }
-// for now lets ust assum ethat the size of the headers and footers does not include
-// the overhead but when we add to memory we scale size up to include overhead
 
 /* Set a block to allocated 
-* Update block headers/footers as needed 
-* Update free list if applicable 
-* Split block if applicable 
+*  1. Update block headers/footers as needed 
+*  2. Update free list if applicable 
+*  3. Split block if applicable 
 */
-static void set_allocated(void *bp, size_t size){   // remember this size includes header / footer
-  block_header* header = (block_header *) HDRP(bp);
-  block_footer* footer = (block_footer *)FTRP(bp);
-  size_t old_size = GET_SIZE(header);
+static void set_allocated(void *bp, size_t size){
+  size_t old_size = GET_SIZE(HDRP(bp));
   size_t extra_space = old_size - size;
-  header->packed = PACK(size, GET_ALLOC(header));
-  delete_node(bp);
   
-  // split if possible making sure the space is not unreasonably small
-  if(extra_space < (OVERHEAD + NODESIZE + __WORDSIZE)){
-    header->packed = PACK(old_size, GET_ALLOC(header));
-  }
-  else {
-    // update allocated block to be smaller
-    footer = (block_footer *)FTRP(bp);
-    // set up the new free list node
-    size_t new_size = extra_space - OVERHEAD;
-    node* new_bp = (node*)(((char *)footer) + OVERHEAD);
-    block_header* new_header = (block_header*) HDRP(new_bp);
-    block_footer* new_footer = (block_footer*) ((char*)new_bp + new_size);
-    add_node(new_bp); 
-    
-    // update block header and footer for the new node
-    new_header->packed = PACK(new_size, 0);
-    new_footer->packed = PACK(new_size, 0);
-  }
+  delete_node(bp);
 
-  // update the allocated block
-  header->packed = PACK(GET_SIZE(header), 1);
-  footer->packed = PACK(GET_SIZE(footer), 1);
+  // no split
+  if(extra_space < (OVERHEAD + NODESIZE + 2 * __WORDSIZE)){ 
+    PUT(HDRP(bp), PACK(old_size, 1));
+    PUT(FTRP(bp), PACK(old_size, 1));
+  }
+  // split
+  else {
+    // update allocated block
+    PUT(HDRP(bp), PACK(size, 1)); 
+    PUT(FTRP(bp), PACK(size, 1));
+
+    // set up the new free list node
+    size_t new_size = extra_space;
+    node* new_bp = (node*) NEXT_BLKP(bp); 
+    
+    add_node(new_bp); 
+
+    // update block header and footer for the new node
+    PUT(HDRP(new_bp), PACK(new_size, 0));
+    PUT(FTRP(new_bp), PACK(new_size, 0));
+  }
 }
 
 /* 
@@ -187,7 +173,7 @@ static void set_allocated(void *bp, size_t size){   // remember this size includ
 *  4. create a new block header for the memory we are allocating
 *  5. return the pointer to the new memory (after the block header)
 */
-void *mm_malloc(size_t size)
+void* mm_malloc(size_t size)
 {
   size += OVERHEAD; 
   size_t aligned_size = ALIGN(size);
@@ -224,8 +210,8 @@ void mm_free(void *ptr)
   add_node(ptr);
   block_header* header = (block_header *)HDRP(ptr);
   block_footer* footer = (block_footer *)FTRP(ptr);
-  header->packed = PACK(GET_SIZE(header), 0);
-  footer->packed = PACK(GET_SIZE(footer), 0);
+  PUT(header, PACK(GET_SIZE(header), 0));
+  PUT(footer, PACK(GET_SIZE(footer), 0));
   // TODO: coalesce
 }
 
@@ -275,16 +261,26 @@ Notes:
 // - implement paging? 
 
     
-    // uncomment to debug
-    // printf("total space: %ld\n", header->size);
-    // printf("size to allocate: %ld\n", size);
-    // printf("extra space: %ld\n", extra_space);
-    // printf("Address of header: %p \n", header);
-    // printf("Relative address of header: %ld \n", header - header);
-    // printf("Relative address of bp: %ld \n", (char*) bp - (char*)header);
-    // printf("Relative address of footer: %ld \n", (char*)footer - (char*)header);
-    // printf("Relative address of new header: %ld \n", (char*)new_header - (char*)header);
-    // printf("Relative address of new bp: %ld \n", (char*)new_bp - (char*)header);
-    // printf("Relative address of new footer: %ld \n", (char*)new_footer - (char*)header);
-    // printf("Size of free block: %ld\n", new_header->size);
-    // printf("Size of allocated block: %ld\n", size);
+// uncomment to debug
+// printf("total space: %ld\n", GET_SIZE(header));
+// printf("size to allocate: %ld\n", size);
+// printf("extra space: %ld\n", extra_space);
+// printf("Address of header: %p \n", header);
+// printf("Relative address of header: %ld \n", header - header);
+// printf("Relative address of bp: %ld \n", (char*) bp - (char*)header);
+// printf("Address of bp: %p \n",bp );
+// printf("Relative address of footer: %ld \n", (char*)footer - (char*)header);
+// printf("Relative address of new header: %ld \n", (char*)new_header - (char*)header);
+// printf("Relative address of new bp: %ld \n", (char*)new_bp - (char*)header);
+// printf("Relative address of new footer: %ld \n", (char*)new_footer - (char*)header);
+// printf("Size of free block: %ld\n", GET_SIZE(new_header));
+// printf("Size of allocated block: %ld\n", size);
+
+// printf("new block: %p\n", new_page);
+// printf("\nextend: size: %ld\n", size);
+// printf("prologue header: %p\n", new_page+1);
+// printf("prologue footer: %p\n", new_page+2);
+// printf("block header: %p\n", new_page+3);
+// printf("bp: %p\n", new_page+4);
+// printf("block footer: %p\n", ((block_header*)FTRP(bp))-1);
+// printf("epilogue: %p\n", ((char*)new_page + size - 8));

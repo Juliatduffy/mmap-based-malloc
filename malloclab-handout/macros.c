@@ -1,6 +1,3 @@
-// This assumes you have a struct or typedef called "block_header" and "block_footer"
-#define OVERHEAD (sizeof(block_header)+sizeof(block_footer))
-
 // Given a payload pointer, get the header or footer pointer
 #define HDRP(bp) ((char *)(bp) - sizeof(block_header))
 #define FTRP(bp) ((char *)(bp)+GET_SIZE(HDRP(bp))-OVERHEAD)
