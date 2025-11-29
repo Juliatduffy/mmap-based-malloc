@@ -35,6 +35,7 @@ typedef struct node {
 #define NODESIZE (sizeof(node))  // 16 bytes 
 
 node *head = NULL; 
+int mapped_pages_count = 0;
 
 // Main functions
 int mm_init(void);
@@ -46,12 +47,12 @@ static inline void extend(size_t s);
 static inline void add_node(node* ptr);
 static inline void delete_node(node* ptr);
 static inline node* first_fit(size_t size);
-static inline void print_free_list_summary(void);
+static inline void* coalesce(void *bp);
 
 /*
  * delete_node - deletes node from the free list 
 */
-void delete_node(node* ptr){
+static inline void delete_node(node* ptr){
   if(!head || !ptr) {
     printf("error in delete_node\n");
     return;
@@ -88,8 +89,8 @@ static inline void add_node(node *ptr) {
 * extend - extends our "heap" size
 */
 static inline void extend(size_t s) {
-  size_t size = PAGE_ALIGN(s); 
-  block_header * new_page = mem_map(size);
+  size_t size = PAGE_ALIGN(2 * s); 
+  block_header * new_page = (block_header*) mem_map(size);
 
   PUT(new_page, 0);  // alignment
   PUT(new_page + 1, PACK(OVERHEAD, 1));  // prologue header
@@ -98,8 +99,8 @@ static inline void extend(size_t s) {
   node* bp = (node*)(new_page + 4);  // payload pointer
   PUT(FTRP(bp), PACK(size - EXTEND_OVERHEAD, 0));  // block footer
   PUT(FTRP(bp) + FOOTERSIZE, PACK(0, 1));  // epilogue header
-  
   add_node(bp);
+  mapped_pages_count++;
 }
 
 /* 
@@ -108,6 +109,7 @@ static inline void extend(size_t s) {
 int mm_init(void)
 {
   head = NULL;
+  mapped_pages_count = 0;
   extend(1);
   if (!head) {
     printf("error in mm_init\n");
@@ -122,7 +124,7 @@ int mm_init(void)
 static inline void set_allocated(void *bp, size_t size){
   size_t old_size = GET_SIZE(HDRP(bp));
   int extra_space = old_size - size;
-  delete_node(bp);
+  delete_node((node*)bp);
 
   // no split
   if((extra_space < OVERHEAD + NODESIZE) || extra_space < 0){ 
@@ -182,27 +184,53 @@ static inline node* first_fit(size_t size){
 /*
 * mm_free - free block at ptr
 */
-void mm_free(void *ptr)
+void mm_free(void *bp)
 {
-  add_node(ptr);
-  block_header* header = (block_header *)HDRP(ptr);
-  block_footer* footer = (block_footer *)FTRP(ptr);
-  PUT(header, PACK(GET_SIZE(header), 0));
-  PUT(footer, PACK(GET_SIZE(footer), 0));
-  // TODO: coalesce, remove empty pages
+  size_t size = GET_SIZE(HDRP(bp));
+  PUT(HDRP(bp),PACK(size,0));
+  PUT(FTRP(bp),PACK(size,0));
+  bp = coalesce(bp);
+  if(mapped_pages_count > 2 && GET_SIZE((bp)) == OVERHEAD){
+    mapped_pages_count--;
+  }
+  else {
+    add_node(bp);
+  }
 }
 
-/*
-* print_free_list_summary - helper to print all free list elements
-*/
-void print_free_list_summary(void){
-  printf("free list summary:\n");
-  printf("head: %p\n", head);
-  node* ptr = head;
-   while( ptr ) {
-      printf( "block hdrp: %p\n", HDRP(ptr));
-      printf( "block ftrp: %p\n", FTRP(ptr));
-      ptr = ptr->next;
-   }
-}
+static inline void* coalesce(void* bp)
+{
+  size_t prev_alloc = GET_ALLOC(FTRP(PREV_BLKP(bp)));
+  size_t next_alloc = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
+  size_t size = GET_SIZE(HDRP(bp));
 
+  if(prev_alloc && next_alloc){
+    return bp;
+  }
+  
+  if(prev_alloc && !next_alloc){
+    size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
+    // delete node that is getting absolved
+    delete_node((node*)NEXT_BLKP(bp));
+    PUT(HDRP(bp),PACK(size,0));
+    PUT(FTRP(bp),PACK(size,0));
+  }
+  
+  else if(!prev_alloc && next_alloc){ 
+    size += GET_SIZE(HDRP(PREV_BLKP(bp)));
+    delete_node((node*)PREV_BLKP(bp));
+    PUT(FTRP(bp),PACK(size, 0));
+    PUT(HDRP(PREV_BLKP(bp)), PACK(size,0));
+    bp = PREV_BLKP(bp);
+  }
+
+  else if(!prev_alloc && !next_alloc){ 
+    size += GET_SIZE(HDRP(PREV_BLKP(bp))) + GET_SIZE(FTRP(NEXT_BLKP(bp)));
+    delete_node((node*)NEXT_BLKP(bp));
+    delete_node((node*)PREV_BLKP(bp));
+    PUT(HDRP(PREV_BLKP(bp)), PACK(size,0));
+    PUT(FTRP(NEXT_BLKP(bp)), PACK(size,0));
+    bp = PREV_BLKP(bp);
+  }
+  return bp;
+}
