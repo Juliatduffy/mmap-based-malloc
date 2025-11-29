@@ -212,7 +212,7 @@ void* mm_malloc(size_t size)
 */
 node* first_fit(size_t size){
   node *curr = head; 
-  while((curr!= NULL) && (GET_SIZE(HDRP(curr))) <= size){    // FIXME: <= here? or just <
+  while((curr!= NULL) && (GET_SIZE(HDRP(curr))) < size){    // FIXME: <= here? or just <
     curr = curr->next;
   }
   return curr;
