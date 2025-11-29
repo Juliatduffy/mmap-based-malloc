@@ -1,0 +1,52 @@
+/*
+Notes: 
+- we don't need to check that free is being called on memory that we have acess to 
+  for this assignment we can just assume we can free whatever pointer is passed in.
+- Eventually it will be a good idea to map pages so that if we have a decent amount of 
+  pages of memory and we have a completely freed page, we can remove that entire page 
+  from the free list. we can do this by keeping track of mapped pages
+- make sentinel and terminator blocks for paging (for beginning and end of heap)
+- implement coalescing
+- could add this to make allocated size even but idk why exactly you would do this:
+  if (size % 2) {
+        size += 1;
+  }
+
+*/
+
+Print statements to debug stuff:
+
+// set allocated
+block_header* header =  (block_header*) HDRP(bp);
+block_footer* footer =  (block_footer*)FTRP(bp);
+block_header* new_header =  (block_header*)HDRP(new_bp);
+block_footer* new_footer = (block_footer*)FTRP(new_bp);
+printf("extra space: %d\n", extra_space);
+printf("Address of header: %p \n", header);
+printf("Address of bp: %p \n",bp );
+printf("Old header: %p \n", header);
+printf("Old footer: %p \n", footer);
+printf("Relative address of new header: %ld \n", (char*)new_header - (char*)new_header);
+printf("Relative address of new bp: %ld \n", (char*)new_bp - (char*)new_header);
+printf("new header: %p, new footer: %p\n", new_header, new_footer);
+printf("Relative address of new footer: %ld \n", (char*)new_footer - (char*)new_header);
+printf("Size of free block: %ld\n", GET_SIZE(new_header));
+printf("Size of allocated block: %ld\n", size);
+print_free_list_summary();
+
+// extend
+block_header* header =  (block_header*) HDRP(bp);
+block_footer* footer =  (block_footer*) FTRP(bp);
+printf("\nextend:\n");
+printf("Size of new block: %ld\n", size);
+printf("Header size: %ld\n", GET_SIZE(header));
+printf("Address of header: %p \n", header);
+printf("Address of bp: %p \n",bp );
+printf("Address of footer: %p \n", footer);
+printf("Relative address of footer: %ld \n", (char*)footer - (char*)header); 
+print_free_list_summary();
+
+
+
+
+
