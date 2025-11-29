@@ -15,7 +15,7 @@
 #include "config.h"
 
 int main() {
-    size_t size = 100;
+    size_t size = 4096;
     printf("Testing malloc with allocating %ld bytes\n", size);
     void* p = mm_malloc(size);
     mm_free(p);
