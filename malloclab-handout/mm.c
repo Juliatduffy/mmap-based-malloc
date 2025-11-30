@@ -48,19 +48,16 @@ static inline void add_node(node* ptr);
 static inline void delete_node(node* ptr);
 static inline node* first_fit(size_t size);
 static inline void* coalesce(void *bp);
+size_t doubling_factor = 1;
 
 /*
  * delete_node - deletes node from the free list 
 */
 static inline void delete_node(node* ptr){
-  if(!head || !ptr) {
-    printf("error in delete_node\n");
-    return;
-  } 
   if(ptr == head) {
     head = head-> next;
   }
-  if (ptr->prev) {
+  if(ptr->prev) {
     ptr->prev->next = ptr->next;
   }
   if(ptr->next) {
@@ -72,10 +69,6 @@ static inline void delete_node(node* ptr){
  * add_node - add a new node to the free list at the head
 */
 static inline void add_node(node *ptr) {
-    if (!ptr) {
-      printf("error in add_node\n");
-      return;
-    }
     ptr->next = head;
     ptr->prev = NULL;
 
@@ -89,9 +82,9 @@ static inline void add_node(node *ptr) {
 * extend - extends our "heap" size
 */
 static inline void extend(size_t s) {
-  size_t size = PAGE_ALIGN(2 * s); 
+  size_t size = PAGE_ALIGN(doubling_factor  * s);
   block_header * new_page = (block_header*) mem_map(size);
-
+  
   PUT(new_page, 0);  // alignment
   PUT(new_page + 1, PACK(OVERHEAD, 1));  // prologue header
   PUT(new_page + 2, PACK(OVERHEAD, 1));   // prologue footer
@@ -110,11 +103,8 @@ int mm_init(void)
 {
   head = NULL;
   mapped_pages_count = 0;
+  doubling_factor = 1;
   extend(1);
-  if (!head) {
-    printf("error in mm_init\n");
-    return -1;
-  }
   return 0;
 }
 
@@ -127,7 +117,7 @@ static inline void set_allocated(void *bp, size_t size){
   delete_node((node*)bp);
 
   // no split
-  if((extra_space < OVERHEAD + NODESIZE) || extra_space < 0){ 
+  if((extra_space < OVERHEAD + (4 * NODESIZE) ) || extra_space < 0){ 
     PUT(HDRP(bp), PACK(old_size, 1));
     PUT(FTRP(bp), PACK(old_size, 1));
   }
@@ -159,7 +149,7 @@ void* mm_malloc(size_t size)
 
   // if there are no free blocks, extend
   if (!bp) {
-    aligned_size += EXTEND_OVERHEAD;
+    doubling_factor ++;
     extend(aligned_size);
     bp = head;
   }
@@ -193,9 +183,7 @@ void mm_free(void *bp)
   if(mapped_pages_count > 2 && GET_SIZE((bp)) == OVERHEAD){
     mapped_pages_count--;
   }
-  else {
-    add_node(bp);
-  }
+  else add_node(bp);
 }
 
 static inline void* coalesce(void* bp)
