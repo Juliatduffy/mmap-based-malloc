@@ -117,7 +117,7 @@ static inline void set_allocated(void *bp, size_t size){
   delete_node((node*)bp);
 
   // no split
-  if((extra_space < OVERHEAD + (4 * NODESIZE) ) || extra_space < 0){ 
+  if((extra_space < OVERHEAD + NODESIZE) || extra_space < 0){ 
     PUT(HDRP(bp), PACK(old_size, 1));
     PUT(FTRP(bp), PACK(old_size, 1));
   }
@@ -180,7 +180,7 @@ void mm_free(void *bp)
   PUT(HDRP(bp),PACK(size,0));
   PUT(FTRP(bp),PACK(size,0));
   bp = coalesce(bp);
-  if(mapped_pages_count > 2 && GET_SIZE((bp)) == OVERHEAD){
+  if(GET_SIZE((bp)) == OVERHEAD && mapped_pages_count > 2 ){
     mapped_pages_count--;
   }
   else add_node(bp);
@@ -191,10 +191,6 @@ static inline void* coalesce(void* bp)
   size_t prev_alloc = GET_ALLOC(FTRP(PREV_BLKP(bp)));
   size_t next_alloc = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
   size_t size = GET_SIZE(HDRP(bp));
-
-  if(prev_alloc && next_alloc){
-    return bp;
-  }
   
   if(prev_alloc && !next_alloc){
     size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
