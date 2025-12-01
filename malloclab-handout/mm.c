@@ -101,7 +101,7 @@ static inline void extend(size_t s) {
   size_t size = PAGE_ALIGN(mapped_pages_count * s);
   block_header * new_page = (block_header*) mem_map(size);
   
-  PUT(new_page, 0);  // alignment
+  PUT(new_page, size);  // alignment and also the size of the page
   PUT(new_page + 1, PACK(OVERHEAD, 1));  // prologue header
   PUT(new_page + 2, PACK(OVERHEAD, 1));   // prologue footer
   PUT(new_page + 3, PACK(size - EXTEND_OVERHEAD, 0));   // block header
@@ -199,6 +199,12 @@ static inline int is_first_block(void *bp) {
 * page_is_free - check to see if this page can be unmapped ie all blocks in it are unallocated
 */
 static inline int page_is_free(void *bp) {
+  size_t page_size = GET(bp);
+  //printf("page size: %ld\n", page_size);
+
+  // goal: loop through all block headers on the 
+  // page and determine if they are all unallocated
+
   return 0;
 }
 
