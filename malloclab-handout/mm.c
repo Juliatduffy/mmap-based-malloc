@@ -101,7 +101,7 @@ static inline void extend(size_t s) {
   size_t size = PAGE_ALIGN(mapped_pages_count * s);
   block_header * new_page = (block_header*) mem_map(size);
   
-  PUT(new_page, size);  // alignment and also the size of the page
+  PUT(new_page, (int)size);  // alignment and also the size of the page
   PUT(new_page + 1, PACK(OVERHEAD, 1));  // prologue header
   PUT(new_page + 2, PACK(OVERHEAD, 1));   // prologue footer
   PUT(new_page + 3, PACK(size - EXTEND_OVERHEAD, 0));   // block header
@@ -196,16 +196,24 @@ static inline int is_first_block(void *bp) {
 }
 
 /*
-* page_is_free - check to see if this page can be unmapped ie all blocks in it are unallocated
+* page_is_free - check to see if this page can be unmapped ie all blocks in 
+* it are unallocated. It is an invariant that the pointer passed in is the first 
+* block in the page.
 */
 static inline int page_is_free(void *bp) {
-  size_t page_size = GET(bp);
-  //printf("page size: %ld\n", page_size);
+  int page_size = (int)GET(PAGE_PTR(bp));
+  void * end_of_page = (char*)PAGE_PTR(bp) + page_size;
 
   // goal: loop through all block headers on the 
   // page and determine if they are all unallocated
-
-  return 0;
+  void* curr = bp;
+  while(curr < end_of_page){
+    if(GET_ALLOC(HDRP(curr)) == 1) {
+      return 0;
+    }
+    curr = NEXT_BLKP(curr);
+  }
+  return 1;
 }
 
 /*
@@ -219,8 +227,9 @@ void mm_free(void *bp)
   bp = coalesce(bp);
 
   // unmap page if it is empty and we have enough pages
-  if(mapped_pages_count > 2 && is_first_block(bp) && page_is_free(PAGE_PTR(bp))) {
-    // TODO: unmap that shit
+  if(mapped_pages_count > 2 && is_first_block(bp) && page_is_free(bp)) {
+    mapped_pages_count--;
+    mem_unmap(PAGE_PTR(bp), GET(PAGE_PTR(bp)));
   } 
   // otherwise add the node back to the free list  
   else {
@@ -260,3 +269,10 @@ static inline void* coalesce(void* bp)
   }
   return bp;
 }
+
+/*
+  printf("page size: %d\n", page_size);
+  printf("page start: %p\n", start_of_page);
+  printf("page end: %p\n", end_of_page);
+
+*/
