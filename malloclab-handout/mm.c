@@ -1,7 +1,7 @@
 /*
  * mm-naive.c
  * author: Julia Duffy and CS4400 at the University of Utah
- * last edited: 11-28-2025
+ * last edited: 12-1-2025
  * current implementation: explicit free list, splitting, freeing, coalescing, 
  * first fit, unmapping of unused pages, smart chunk mapping.
  */
@@ -44,7 +44,7 @@ typedef struct node {
 #define NODE_SIZE (sizeof(node))  // 16 bytes 
 #define EXTEND_OVERHEAD (4 * sizeof(block_header)) // 32 bytes
 #define PAGE_PTR(bp) ((char *)(bp) - EXTEND_OVERHEAD) 
-#define PAGE_SIZE(bp) (GET(PAGE_PTR(bp))) // varies bc of doubling
+#define PAGE_SIZE(bp) (GET(PAGE_PTR(bp))) // varies bc of smart chunk mapping
 
 // FREE LIST HEAD
 node *head = NULL;
@@ -57,7 +57,7 @@ int mm_init(void);
 void* mm_malloc(size_t size);
 void mm_free(void *ptr);
 
-// HELPER FUNCTIONS
+// HELPER FUNCTIONS 
 static inline void extend(size_t s);
 static inline void add_node(node* ptr);
 static inline void delete_node(node* ptr);
@@ -87,7 +87,6 @@ static inline void delete_node(node* ptr){
 static inline void add_node(node *ptr) {
     ptr->next = head;
     ptr->prev = NULL;
-
     if (head) {
         head->prev = ptr;
     }
@@ -108,6 +107,7 @@ static inline void extend(size_t s) {
   node* bp = (node*)(new_page + 4);  // payload pointer
   PUT(FTRP(bp), PACK(size - EXTEND_OVERHEAD, 0));  // block footer
   PUT(FTRP(bp) + FOOTER_SIZE, PACK(0, 1));  // epilogue header
+  
   add_node(bp);
   mapped_pages_count++;
 }
@@ -186,7 +186,8 @@ static inline node* first_fit(size_t size){
 }
 
 /*
-* is_first_block - check to see if this is the first blockin heap page
+* is_first_block - check to see if this is the first block in heap page, 
+* ie, the previous block is the prologue block. 
 */
 static inline int is_first_block(void *bp) {
   block_header * prologue_ptr = (block_header *)((char*)bp - OVERHEAD);
@@ -196,24 +197,14 @@ static inline int is_first_block(void *bp) {
 }
 
 /*
-* page_is_free - check to see if this page can be unmapped ie all blocks in 
-* it are unallocated. It is an invariant that the pointer passed in is the first 
+* page_is_free - check to see if this page can be unmapped ie the size of the 
+* first block in the page is the size of the entire page (which is stored in the first
+* 8 bytes in the page). It is an invariant that the pointer passed in is the first 
 * block in the page.
 */
 static inline int page_is_free(void *bp) {
   int page_size = (int)GET(PAGE_PTR(bp));
-  void * end_of_page = (char*)PAGE_PTR(bp) + page_size;
-
-  // goal: loop through all block headers on the 
-  // page and determine if they are all unallocated
-  void* curr = bp;
-  while(curr < end_of_page){
-    if(GET_ALLOC(HDRP(curr)) == 1) {
-      return 0;
-    }
-    curr = NEXT_BLKP(curr);
-  }
-  return 1;
+  return (page_size == (GET_SIZE(HDRP(bp)) + EXTEND_OVERHEAD));
 }
 
 /*
@@ -237,6 +228,10 @@ void mm_free(void *bp)
   }
 }
 
+/*
+* coalesce - combines consecutive free blocks. 
+* Delete the node(s) that are getting absorbed.
+*/
 static inline void* coalesce(void* bp)
 {
   size_t prev_alloc = GET_ALLOC(FTRP(PREV_BLKP(bp)));
@@ -245,7 +240,6 @@ static inline void* coalesce(void* bp)
   
   if(prev_alloc && !next_alloc){
     size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
-    // delete node that is getting absolved
     delete_node((node*)NEXT_BLKP(bp));
     PUT(HDRP(bp),PACK(size,0));
     PUT(FTRP(bp),PACK(size,0));
@@ -269,10 +263,3 @@ static inline void* coalesce(void* bp)
   }
   return bp;
 }
-
-/*
-  printf("page size: %d\n", page_size);
-  printf("page start: %p\n", start_of_page);
-  printf("page end: %p\n", end_of_page);
-
-*/

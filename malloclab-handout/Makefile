@@ -2,7 +2,7 @@
 # Makefile for the malloc lab driver
 #
 CC = gcc
-CFLAGS =  -O2 -Wall # DELETE -g -fsanitize=address later
+CFLAGS = -O2 -Wall
 
 OBJS = mdriver.o mm.o memlib.o pagemap.o fsecs.o fcyc.o clock.o ftimer.o
 
