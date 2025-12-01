@@ -2,8 +2,8 @@
  * mm-naive.c
  * author: Julia Duffy and CS4400 at the University of Utah
  * last edited: 11-28-2025
- * current implementation: splitting with packed headers and prologue and epilogue blocks (24/100).
- * next implementation: same thing but with removing unmapped pages, then with coalescing.
+ * current implementation: explicit free list, splitting, freeing, coalescing, 
+ * first fit, unmapping of unused pages, smart chunk mapping.
  */
 
 #include <stdio.h>
@@ -13,11 +13,6 @@
 #include <string.h>
 #include "mm.h"
 #include "memlib.h"
-#include "macros.c"
-
-#define ALIGNMENT 16
-#define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~(ALIGNMENT-1))
-#define PAGE_ALIGN(size) (((size) + (mem_pagesize()-1)) & ~(mem_pagesize()-1)) 
 
 // BLOCK HEADER AND FOOTER FOR ALLOCATED MEMORY
 typedef size_t block_header, block_footer;
@@ -28,27 +23,48 @@ typedef struct node {
   struct node* next; 
 } node; 
 
-#define HEADERSIZE (sizeof(block_header)) // 8 bytes
-#define FOOTERSIZE (sizeof(block_footer)) // 8 bytes
+// PROVIDED MACROS
+#define ALIGNMENT 16
+#define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~(ALIGNMENT-1))
+#define PAGE_ALIGN(size) (((size) + (mem_pagesize()-1)) & ~(mem_pagesize()-1)) 
+#define HDRP(bp) ((char *)(bp) - sizeof(block_header))
+#define FTRP(bp) ((char *)(bp)+GET_SIZE(HDRP(bp))-OVERHEAD)
+#define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE(HDRP(bp)))
+#define PREV_BLKP(bp) ((char *)(bp)-GET_SIZE((char *)(bp)-OVERHEAD))
+#define GET(p) (*(size_t *)(p))
+#define PUT(p, val) (*(size_t *)(p) = (val))
+#define PACK(size, alloc) ((size) | (alloc))
+#define GET_ALLOC(p) (GET(p) & 0x1)
+#define GET_SIZE(p) (GET(p) & ~0xF)
 #define OVERHEAD (sizeof(block_header)+sizeof(block_footer)) // 16 bytes
-#define EXTEND_OVERHEAD (4 * sizeof(block_header)) // 32 bytes
-#define NODESIZE (sizeof(node))  // 16 bytes 
 
-node *head = NULL; 
+// MY MACROS
+#define HEADER_SIZE (sizeof(block_header)) // 8 bytes
+#define FOOTER_SIZE (sizeof(block_footer)) // 8 bytes
+#define NODE_SIZE (sizeof(node))  // 16 bytes 
+#define EXTEND_OVERHEAD (4 * sizeof(block_header)) // 32 bytes
+#define PAGE_PTR(bp) ((char *)(bp) - EXTEND_OVERHEAD) 
+#define PAGE_SIZE(bp) (GET(PAGE_PTR(bp))) // varies bc of doubling
+
+// FREE LIST HEAD
+node *head = NULL;
+
+// NUMBER OF MAPPED PAGES
 int mapped_pages_count = 0;
 
-// Main functions
+// MAIN FUNCTIONS
 int mm_init(void);
 void* mm_malloc(size_t size);
 void mm_free(void *ptr);
 
-// Helper functions
+// HELPER FUNCTIONS
 static inline void extend(size_t s);
 static inline void add_node(node* ptr);
 static inline void delete_node(node* ptr);
 static inline node* first_fit(size_t size);
 static inline void* coalesce(void *bp);
-size_t doubling_factor = 1;
+static inline int is_first_block(void *ptr);
+static inline int page_is_free(void *bp);
 
 /*
  * delete_node - deletes node from the free list 
@@ -82,7 +98,7 @@ static inline void add_node(node *ptr) {
 * extend - extends our "heap" size
 */
 static inline void extend(size_t s) {
-  size_t size = PAGE_ALIGN(doubling_factor  * s);
+  size_t size = PAGE_ALIGN(mapped_pages_count * s);
   block_header * new_page = (block_header*) mem_map(size);
   
   PUT(new_page, 0);  // alignment
@@ -91,7 +107,7 @@ static inline void extend(size_t s) {
   PUT(new_page + 3, PACK(size - EXTEND_OVERHEAD, 0));   // block header
   node* bp = (node*)(new_page + 4);  // payload pointer
   PUT(FTRP(bp), PACK(size - EXTEND_OVERHEAD, 0));  // block footer
-  PUT(FTRP(bp) + FOOTERSIZE, PACK(0, 1));  // epilogue header
+  PUT(FTRP(bp) + FOOTER_SIZE, PACK(0, 1));  // epilogue header
   add_node(bp);
   mapped_pages_count++;
 }
@@ -102,8 +118,7 @@ static inline void extend(size_t s) {
 int mm_init(void)
 {
   head = NULL;
-  mapped_pages_count = 0;
-  doubling_factor = 1;
+  mapped_pages_count = 1;
   extend(1);
   return 0;
 }
@@ -117,7 +132,7 @@ static inline void set_allocated(void *bp, size_t size){
   delete_node((node*)bp);
 
   // no split
-  if((extra_space < OVERHEAD + NODESIZE) || extra_space < 0){ 
+  if((extra_space < OVERHEAD + NODE_SIZE) || extra_space < 0){ 
     PUT(HDRP(bp), PACK(old_size, 1));
     PUT(FTRP(bp), PACK(old_size, 1));
   }
@@ -149,7 +164,6 @@ void* mm_malloc(size_t size)
 
   // if there are no free blocks, extend
   if (!bp) {
-    doubling_factor ++;
     extend(aligned_size);
     bp = head;
   }
@@ -172,6 +186,23 @@ static inline node* first_fit(size_t size){
 }
 
 /*
+* is_first_block - check to see if this is the first blockin heap page
+*/
+static inline int is_first_block(void *bp) {
+  block_header * prologue_ptr = (block_header *)((char*)bp - OVERHEAD);
+  size_t size = GET_SIZE(prologue_ptr);
+  int alloc = GET_ALLOC(prologue_ptr);
+  return (size == OVERHEAD && alloc == 1);
+}
+
+/*
+* page_is_free - check to see if this page can be unmapped ie all blocks in it are unallocated
+*/
+static inline int page_is_free(void *bp) {
+  return 0;
+}
+
+/*
 * mm_free - free block at ptr
 */
 void mm_free(void *bp)
@@ -180,10 +211,15 @@ void mm_free(void *bp)
   PUT(HDRP(bp),PACK(size,0));
   PUT(FTRP(bp),PACK(size,0));
   bp = coalesce(bp);
-  if(GET_SIZE((bp)) == OVERHEAD && mapped_pages_count > 2 ){
-    mapped_pages_count--;
+
+  // unmap page if it is empty and we have enough pages
+  if(mapped_pages_count > 2 && is_first_block(bp) && page_is_free(PAGE_PTR(bp))) {
+    // TODO: unmap that shit
+  } 
+  // otherwise add the node back to the free list  
+  else {
+    add_node(bp);
   }
-  else add_node(bp);
 }
 
 static inline void* coalesce(void* bp)
